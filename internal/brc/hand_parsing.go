@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"unsafe"
-
-	"golang.org/x/exp/mmap"
 )
 
 type parserState int
@@ -22,57 +20,46 @@ const (
 )
 
 func HandParserMmap(inputFile string) string {
-	mm, err := mmap.Open(inputFile)
+	reader, err := NewMmapReader(inputFile)
 	if err != nil {
 		log.Fatal(err)
 	}
-	return HandParsing(mm)
+	return HandParsing(reader)
 }
 
-func HandParsing(input io.ReaderAt) string {
+func HandParsing(input io.Reader) string {
 	stations := make(map[string]*Station, 2048)
-
-	// scanner := bufio.NewScanner(input)
-	// scanner.Split(bufio.ScanBytes)
 
 	state := parserStateName
 	var offset int64
-	var stateStartOffset int64
 	name := make([]byte, 0, 256)
 	valueB := make([]byte, 0, 256)
 	b := make([]byte, 1)
 
 	for {
-		_, err := input.ReadAt(b, offset)
+		_, err := input.Read(b)
 		if err != nil {
 			if err == io.EOF {
 				break
 			}
 			log.Fatal(err)
 		}
-		if state == parserStateEOL {
+		if state == parserStateEOL && b[0] != '\n' {
+			name = name[:0]
+			name = append(name, b[0])
 			state = parserStateName
-			stateStartOffset = offset
+		} else if state == parserStateName && b[0] != ';' {
+			name = append(name, b[0])
 		} else if state == parserStateName && b[0] == ';' {
-			_, err = input.ReadAt(name[:offset-stateStartOffset], stateStartOffset)
-			if err != nil {
-				log.Fatalf("reading name failed: %s", err)
-			}
-			name = name[:offset-stateStartOffset]
-
 			state = parserStateSeparator
-			stateStartOffset = offset
 		} else if state == parserStateSeparator && b[0] != ';' {
 			state = parserStateValue
-			stateStartOffset = offset
+			valueB = valueB[:0]
+			valueB = append(valueB, b[0])
+		} else if state == parserStateValue && b[0] != '\n' {
+			valueB = append(valueB, b[0])
 		} else if state == parserStateValue && b[0] == '\n' {
-			_, err = input.ReadAt(valueB[:offset-stateStartOffset], stateStartOffset)
-			if err != nil {
-				log.Fatalf("reading valueB failed: %s", err)
-			}
-			valueB = valueB[:offset-1-stateStartOffset]
-
-			value := unsafe.String(unsafe.SliceData(valueB), offset-1-stateStartOffset)
+			value := unsafe.String(unsafe.SliceData(valueB), len(valueB))
 			m, err := strconv.ParseFloat(value, 64)
 			if err != nil {
 				log.Fatal(err)
@@ -86,7 +73,6 @@ func HandParsing(input io.ReaderAt) string {
 			}
 
 			state = parserStateEOL
-			stateStartOffset = offset
 		}
 		offset++
 	}
