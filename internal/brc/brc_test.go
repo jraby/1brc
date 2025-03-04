@@ -10,16 +10,13 @@ import (
 func benchmark(b *testing.B, parserFunc func(io.Reader) string, inputFile string) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		b.StopTimer()
 
 		f, err := os.Open(inputFile)
 		if err != nil {
 			log.Fatal(err)
 		}
-		b.StartTimer()
 		parserFunc(f)
 
-		b.StopTimer()
 		f.Close()
 	}
 }
@@ -42,4 +39,16 @@ func BenchmarkHandParserMmap10m(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		HandParserMmap("../../data/10m.txt")
 	}
+}
+
+func BenchmarkPatateParserMmap10m(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		// b.Log(PatateMmapReader("../../data/10m.txt"))
+		PatateMmapReader("../../data/10m.txt")
+	}
+}
+
+func BenchmarkPatateBufferedReader10m(b *testing.B) {
+	benchmark(b, PatateBufferedReader, "../../data/10m.txt")
 }

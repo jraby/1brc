@@ -60,8 +60,12 @@ func ReducedAllocs(input io.Reader) string {
 
 	out := make([]string, 0, len(stations)+2)
 	out = append(out, "{")
-	for _, k := range keys {
-		out = append(out, fmt.Sprintf("%s=%0.1f/%0.1f/%0.1f, ", k, stations[k].Min, stations[k].Total/float64(stations[k].N), stations[k].Max))
+	for i, k := range keys {
+		if i == len(keys)-1 {
+			out = append(out, fmt.Sprintf("%s=%0.1f/%0.1f/%0.1f", k, stations[k].Min, stations[k].Total/float64(stations[k].N), stations[k].Max))
+		} else {
+			out = append(out, fmt.Sprintf("%s=%0.1f/%0.1f/%0.1f, ", k, stations[k].Min, stations[k].Total/float64(stations[k].N), stations[k].Max))
+		}
 	}
 	out = append(out, "}")
 	return strings.Join(out, "")
