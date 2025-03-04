@@ -21,7 +21,7 @@ func ReducedAllocsMmapReader(inputFile string) string {
 }
 
 func ReducedAllocsBufferedReader(input io.Reader) string {
-	reader := bufio.NewReaderSize(input, 4*1024*1024)
+	reader := bufio.NewReaderSize(input, 1024*1024)
 	return ReducedAllocs(reader)
 }
 

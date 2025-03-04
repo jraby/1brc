@@ -25,67 +25,39 @@ func PatateBufferedReader(input io.Reader) string {
 	return Patate(reader)
 }
 
-type Splitter struct {
-	State parserState
-}
-
-func (s *Splitter) Split(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	var i int
-	if s.State == parserStateName {
-		i = bytes.IndexByte(data, ';')
-	} else {
-		i = bytes.IndexByte(data, '\n')
-	}
-	if i == -1 {
-		if !atEOF {
-			return 0, nil, nil
-		}
-		if len(data) > 0 {
-			// If we have reached the end, return the last token.
-			return 0, data, bufio.ErrFinalToken
-		} else {
-			return 0, nil, bufio.ErrFinalToken
-		}
-	}
-
-	// return token without delimiter
-	return i + 1, data[:i], nil
-}
-
 func Patate(input io.Reader) string {
 	stations := make(map[string]*Station, 2048)
 	scanner := bufio.NewScanner(input)
 
-	// state := parserStateName
+	state := parserStateName
 	var station *Station
-	splitter := Splitter{State: parserStateName}
 
-	// splitter := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	//	var i int
-	//	if state == parserStateName {
-	//		i = bytes.IndexByte(data, ';')
-	//	} else {
-	//		i = bytes.IndexByte(data, '\n')
-	//	}
-	//	if i == -1 {
-	//		if !atEOF {
-	//			return 0, nil, nil
-	//		}
-	//		if len(data) > 0 {
-	//			// If we have reached the end, return the last token.
-	//			return 0, data, bufio.ErrFinalToken
-	//		} else {
-	//			return 0, nil, bufio.ErrFinalToken
-	//		}
-	//	}
+	splitter := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+		var i int
+		if state == parserStateName {
+			i = bytes.IndexByte(data, ';')
+		} else {
+			i = bytes.IndexByte(data, '\n')
+		}
+		if i == -1 {
+			if !atEOF {
+				return 0, nil, nil
+			}
+			if len(data) > 0 {
+				// If we have reached the end, return the last token.
+				return 0, data, bufio.ErrFinalToken
+			} else {
+				return 0, nil, bufio.ErrFinalToken
+			}
+		}
 
-	//	// return token without delimiter
-	//	return i + 1, data[:i], nil
-	//}
+		// return token without delimiter
+		return i + 1, data[:i], nil
+	}
 
-	scanner.Split(splitter.Split)
+	scanner.Split(splitter)
 	for scanner.Scan() {
-		switch splitter.State {
+		switch state {
 		case parserStateName:
 			s, ok := stations[string(scanner.Bytes())]
 			if !ok {
@@ -93,7 +65,7 @@ func Patate(input io.Reader) string {
 				stations[string(scanner.Bytes())] = s
 			}
 			station = s
-			splitter.State = parserStateValue
+			state = parserStateValue
 		case parserStateValue:
 			b := scanner.Bytes()
 			value := unsafe.String(unsafe.SliceData(b), len(b))
@@ -102,7 +74,7 @@ func Patate(input io.Reader) string {
 				log.Fatal(err)
 			}
 			station.NewMeasurement(m)
-			splitter.State = parserStateName
+			state = parserStateName
 		}
 	}
 

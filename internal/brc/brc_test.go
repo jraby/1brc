@@ -26,6 +26,13 @@ func BenchmarkReducedAllocs10m(b *testing.B) { benchmark(b, ReducedAllocs, "../.
 func BenchmarkReducedAllocsBufferedReader10m(b *testing.B) {
 	benchmark(b, ReducedAllocsBufferedReader, "../../data/10m.txt")
 }
+func BenchmarkReadSlice10m(b *testing.B) { benchmark(b, ReadSlice, "../../data/10m.txt") }
+func BenchmarkReadSliceMmap10m(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ReadSliceMmap("../../data/10m.txt")
+	}
+}
 
 func BenchmarkReducedAllocsMmap10m(b *testing.B) {
 	b.ReportAllocs()

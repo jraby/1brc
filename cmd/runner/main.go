@@ -38,6 +38,8 @@ func main() {
 		fmt.Println(brc.ReducedAllocs(f))
 	case "patate":
 		fmt.Println(brc.PatateBufferedReader(f))
+	case "readslice":
+		fmt.Println(brc.ReadSlice(f))
 	default:
 		log.Fatalf("unknown func: %s", *parserFuncName)
 	}
