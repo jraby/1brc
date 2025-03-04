@@ -40,6 +40,8 @@ func main() {
 		fmt.Println(brc.PatateBufferedReader(f))
 	case "readslice":
 		fmt.Println(brc.ReadSlice(f))
+	case "readslicestringhash":
+		fmt.Println(brc.ReadSliceStringHash(f))
 	default:
 		log.Fatalf("unknown func: %s", *parserFuncName)
 	}
