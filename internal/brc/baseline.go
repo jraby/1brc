@@ -10,6 +10,79 @@ import (
 	"strings"
 )
 
+type StationInt16 struct {
+	Min   int16
+	Max   int16
+	Total int32
+	N     int32
+}
+
+func num2str(i int16) string {
+	u, d := i/10, i%10
+
+	if i >= 0 {
+		return fmt.Sprintf("%d.%d", u, d)
+	}
+
+	u = -u
+	d = -d
+	return fmt.Sprintf("-%d.%d", u, d)
+}
+
+func (s *StationInt16) FancyPrint() string {
+	avg := float64(s.Total) / 10 / float64(s.N)
+	return num2str(s.Min) + "/" + fmt.Sprintf("%.1f", avg) + "/" + num2str(s.Max)
+}
+
+func (s *StationInt16) NewMeasurement(m int16) {
+	s.N += 1
+	s.Total += int32(m)
+	if m < s.Min {
+		s.Min = m
+	}
+	if m > s.Max {
+		s.Max = m
+	}
+}
+
+func NewStationInt16(m int16) *StationInt16 {
+	return &StationInt16{
+		Min:   m,
+		Max:   m,
+		Total: int32(m),
+		N:     1,
+	}
+}
+
+type StationInt struct {
+	Min   int32
+	Max   int32
+	Total int32
+	N     int32
+}
+
+func (s *StationInt) NewMeasurement(m float64) {
+	mFixed := int32(m * 10)
+	s.N += 1
+	s.Total += mFixed
+	if mFixed < s.Min {
+		s.Min = mFixed
+	}
+	if mFixed > s.Max {
+		s.Max = mFixed
+	}
+}
+
+func NewStationInt(m float64) *StationInt {
+	mFixed := int32(m * 10)
+	return &StationInt{
+		Min:   mFixed,
+		Max:   mFixed,
+		Total: mFixed,
+		N:     1,
+	}
+}
+
 type Station struct {
 	Min   float64
 	Max   float64
@@ -34,6 +107,17 @@ func (s *Station) NewMeasurement(m float64) {
 	s.Max = m
 	s.Total = m
 	s.N++
+}
+
+func (s *Station) NewMeasurement2(m float64) {
+	s.N += 1
+	s.Total += m
+	if m < s.Min {
+		s.Min = m
+	}
+	if m > s.Max {
+		s.Max = m
+	}
 }
 
 func NewStation(m float64) *Station {

@@ -42,6 +42,14 @@ func main() {
 		fmt.Println(brc.ReadSlice(f))
 	case "readslicestringhash":
 		fmt.Println(brc.ReadSliceStringHash(f))
+	case "readsliceint32":
+		fmt.Println(brc.ReadSliceInt32(f))
+	case "readslicefixed16":
+		fmt.Println(brc.ReadSliceFixedInt16(f))
+	case "readslicefixed16unsafe":
+		fmt.Println(brc.ReadSliceFixedInt16Unsafe(f))
+	case "readslicehashfixed16unsafe":
+		fmt.Println(brc.ReadSliceStringHashFixedInt16Unsafe(f))
 	default:
 		log.Fatalf("unknown func: %s", *parserFuncName)
 	}

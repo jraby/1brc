@@ -3,15 +3,17 @@ package brc
 import (
 	"fmt"
 	"strings"
+
+	"github.com/cespare/xxhash/v2"
 )
 
 type StringHashTable struct {
 	buckets      []*Entry
-	nbuckets     uint32
+	nbuckets     uint64
 	knownEntries []string
 }
 
-func NewStringHashTable(nbuckets uint32) (*StringHashTable, error) {
+func NewStringHashTable(nbuckets uint64) (*StringHashTable, error) {
 	// http://www.graphics.stanford.edu/~seander/bithacks.html#DetermineIfPowerOf2
 	if nbuckets == 0 || (nbuckets&(nbuckets-1)) != 0 {
 		return nil, fmt.Errorf("nbuckets must be a power of 2: %d", nbuckets)
@@ -60,7 +62,8 @@ func stringHash(s string) uint32 {
 
 func (t *StringHashTable) getOrCreate(name string) *Station {
 	// h := stringHash(name) % BUCKETS
-	h := stringHash(name) & (t.nbuckets - 1)
+	// h := stringHash(name) & (t.nbuckets - 1)
+	h := xxhash.Sum64String(name) & (t.nbuckets - 1)
 
 	for e := t.buckets[h]; e != nil; e = e.next {
 		if e.name == name {
@@ -82,5 +85,57 @@ func (t *StringHashTable) getOrCreate(name string) *Station {
 }
 
 func (t *StringHashTable) KnownEntries() []string {
+	return t.knownEntries
+}
+
+type StringHashTableInt16Stations struct {
+	buckets      []*EntryInt16Station
+	nbuckets     uint64
+	knownEntries []string
+}
+
+func NewStringHashTableInt16Stations(nbuckets uint64) (*StringHashTableInt16Stations, error) {
+	// http://www.graphics.stanford.edu/~seander/bithacks.html#DetermineIfPowerOf2
+	if nbuckets == 0 || (nbuckets&(nbuckets-1)) != 0 {
+		return nil, fmt.Errorf("nbuckets must be a power of 2: %d", nbuckets)
+	}
+	return &StringHashTableInt16Stations{
+		buckets:      make([]*EntryInt16Station, nbuckets),
+		nbuckets:     nbuckets,
+		knownEntries: make([]string, 0, nbuckets),
+	}, nil
+}
+
+type EntryInt16Station struct {
+	name    string
+	station *StationInt16
+	next    *EntryInt16Station
+}
+
+func (t *StringHashTableInt16Stations) getOrCreate(name string) *StationInt16 {
+	// h := stringHash(name) % BUCKETS
+	// h := stringHash(name) & (t.nbuckets - 1)
+	h := xxhash.Sum64String(name) & (t.nbuckets - 1)
+
+	for e := t.buckets[h]; e != nil; e = e.next {
+		if e.name == name {
+			return e.station
+		}
+	}
+
+	name = strings.Clone(name)
+	// Not found, create new
+	newEntry := &EntryInt16Station{
+		name:    name,
+		station: &StationInt16{},
+	}
+
+	newEntry.next = t.buckets[h]
+	t.buckets[h] = newEntry
+	t.knownEntries = append(t.knownEntries, name)
+	return newEntry.station
+}
+
+func (t *StringHashTableInt16Stations) KnownEntries() []string {
 	return t.knownEntries
 }

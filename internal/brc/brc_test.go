@@ -30,7 +30,20 @@ func BenchmarkReducedAllocsBufferedReader10m(b *testing.B) {
 func BenchmarkReadSliceStringHash10m(b *testing.B) {
 	benchmark(b, ReadSliceStringHash, "../../data/10m.txt")
 }
-func BenchmarkReadSlice10m(b *testing.B) { benchmark(b, ReadSlice, "../../data/10m.txt") }
+func BenchmarkReadSlice10m(b *testing.B)      { benchmark(b, ReadSlice, "../../data/10m.txt") }
+func BenchmarkReadSliceInt3210m(b *testing.B) { benchmark(b, ReadSliceInt32, "../../data/10m.txt") }
+func BenchmarkReadSliceFixed1610m(b *testing.B) {
+	benchmark(b, ReadSliceFixedInt16, "../../data/10m.txt")
+}
+
+func BenchmarkReadSliceFixed16Unsafe10m(b *testing.B) {
+	benchmark(b, ReadSliceFixedInt16Unsafe, "../../data/10m.txt")
+}
+
+func BenchmarkReadSliceStringHashFixed16Unsafe10m(b *testing.B) {
+	benchmark(b, ReadSliceStringHashFixedInt16Unsafe, "../../data/10m.txt")
+}
+
 func BenchmarkReadSliceMmap10m(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
