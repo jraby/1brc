@@ -15,6 +15,7 @@ type StationInt16 struct {
 	Max   int16
 	Total int32
 	N     int32
+	Name  []byte
 }
 
 func num2str(i int16) string {

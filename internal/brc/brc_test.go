@@ -40,10 +40,24 @@ func BenchmarkReadSliceFixed16Unsafe10m(b *testing.B) {
 	benchmark(b, ReadSliceFixedInt16Unsafe, "../../data/10m.txt")
 }
 
-func BenchmarkParallelReadSliceFixedInt16Unsafe(b *testing.B) {
+func BenchmarkParallelReadSliceFixedInt16Unsafe10m(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		Carotte("../../data/10m.txt")
+	}
+}
+
+func BenchmarkParallelReadSliceFixedInt16UnsafeBsearch10m(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ParallelReadSliceFixedInt16UnsafeBSearchNames("../../data/10m.txt")
+	}
+}
+
+func BenchmarkParallelReadSliceFixedInt16Unsafe1b(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		Carotte("../../data/1b.txt")
 	}
 }
 
