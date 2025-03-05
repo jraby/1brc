@@ -256,6 +256,7 @@ func ParallelReadSliceFixedInt16UnsafeOpenAddr(inputFile string) string {
 	n := runtime.NumCPU()
 	// n := 1
 	readers, err := NewMmapedSectionReaders(inputFile, n)
+	// readers, err := NewMmapedSectionReadersMadv(inputFile, n)
 	if err != nil {
 		log.Fatalf("NewMmapedSectionReaders: %s", err)
 	}
@@ -268,6 +269,74 @@ func ParallelReadSliceFixedInt16UnsafeOpenAddr(inputFile string) string {
 			defer wg.Done()
 			runtime.LockOSThread()
 			stationTables[i] = parallelReadSliceFixedInt16UnsafeOpenAddr(readers[i])
+		}()
+	}
+
+	wg.Wait()
+	mergedStations := make(map[string]*StationInt16, 2048)
+	for i := range stationTables {
+		table := stationTables[i]
+		for j := range table {
+			if len(table[j].Name) == 0 {
+				continue
+			}
+			merged, ok := mergedStations[string(table[j].Name)]
+			if !ok {
+				merged = &StationInt16{
+					Min:   table[j].Min,
+					Max:   table[j].Max,
+					Total: table[j].Total,
+					N:     table[j].N,
+				}
+				mergedStations[string(table[j].Name)] = merged
+				continue
+			}
+
+			merged.Total += table[j].Total
+			merged.N += table[j].N
+			if table[j].Min < merged.Min {
+				table[j].Min = merged.Min
+			}
+			if table[j].Max > merged.Max {
+				table[j].Max = merged.Max
+			}
+		}
+	}
+
+	keys := make([]string, 0, len(mergedStations))
+	for k := range mergedStations {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	out := make([]string, 0, len(mergedStations)+2)
+	out = append(out, "{")
+	for i, k := range keys {
+		station := mergedStations[k]
+		if i == len(keys)-1 {
+			out = append(out, fmt.Sprintf("%s=%s", k, station.FancyPrint()))
+		} else {
+			out = append(out, fmt.Sprintf("%s=%s, ", k, station.FancyPrint()))
+		}
+	}
+	out = append(out, "}")
+	return strings.Join(out, "")
+}
+
+func ParallelRunner(inputFile string, nworkers int, parser func(io.Reader) []StationInt16) string {
+	readers, err := NewMmapedSectionReaders(inputFile, nworkers)
+	if err != nil {
+		log.Fatalf("NewMmapedSectionReaders: %s", err)
+	}
+
+	stationTables := make([][]StationInt16, nworkers)
+	wg := sync.WaitGroup{}
+	wg.Add(nworkers)
+	for i := range nworkers {
+		go func() {
+			defer wg.Done()
+			runtime.LockOSThread()
+			stationTables[i] = parser(readers[i])
 		}()
 	}
 
@@ -368,6 +437,51 @@ func parallelReadSliceFixedInt16UnsafeOpenAddr(input io.Reader) []StationInt16 {
 			station.Total = int32(m)
 			station.N = 1
 		}
+	}
+
+	return stationTable
+}
+
+func ParallelReadSlicePatateLineFixedInt16UnsafeOpenAddr(input io.Reader) []StationInt16 {
+	stationTable := make([]StationInt16, 65535)
+	for i := range stationTable {
+		stationTable[i].Min = 32767
+		stationTable[i].Max = -32767
+	}
+	br := bufio.NewReaderSize(input, 64*1024)
+
+	for {
+		name, err := br.ReadSlice(';')
+		if err != nil {
+			log.Fatalf("ReadSlice ';' : %s", err)
+		}
+		name = name[:len(name)-1]
+		h := byteHash(name) % uint32(len(stationTable))
+
+		station := &stationTable[h]
+		if station.N == 0 {
+			station.Name = bytes.Clone(name)
+		}
+		//if !bytes.Equal(station.Name, name) {
+		//	panic("woupelai")
+		//}
+
+		value, err := br.ReadSlice('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Fatalf("ReadSlice: %s", err)
+		}
+		value = value[:len(value)-1]
+
+		m, err := ParseFixedPoint16Unsafe(value)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		station.NewMeasurement(m)
+		// station.NewMeasurementNoBranch(m)
 	}
 
 	return stationTable

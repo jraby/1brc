@@ -13,6 +13,7 @@ import (
 func main() {
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 	parserFuncName := flag.String("funcName", "baseline", "function to call")
+	nworkers := flag.Int("n", 1, "number of workers for parallel funcs")
 	inputFile := flag.String("i", "data/10m.txt", "input file")
 	flag.Parse()
 
@@ -56,6 +57,8 @@ func main() {
 		fmt.Println(brc.ParallelReadSliceFixedInt16UnsafeBSearchNames(*inputFile))
 	case "parallelreadslicefixed16unsafeopen":
 		fmt.Println(brc.ParallelReadSliceFixedInt16UnsafeOpenAddr(*inputFile))
+	case "ParallelReadSlicePatateLineFixedInt16UnsafeOpenAddr":
+		fmt.Println(brc.ParallelRunner(*inputFile, *nworkers, brc.ParallelReadSlicePatateLineFixedInt16UnsafeOpenAddr))
 	default:
 		log.Fatalf("unknown func: %s", *parserFuncName)
 	}

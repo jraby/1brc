@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"syscall"
 
@@ -63,22 +64,24 @@ func NewMmapedSectionReadersMadv(inputFile string, nsections int) ([]*io.Section
 		return nil, err
 	}
 
-	err = syscall.Madvise(data, syscall.MADV_SEQUENTIAL|syscall.MADV_WILLNEED)
-	if err != nil {
-		return nil, err
-	}
-
 	r := bytes.NewReader(data)
 
 	sectionReaders := make([]*io.SectionReader, nsections)
 	sectionSize := size / nsections
 	sectionStartPos := 0
-	// log.Printf("len: %d, sectionSize: %d", mmlen, sectionSize)
+	log.Printf("len: %d, sectionSize: %d", size, sectionSize)
 	for i := range nsections {
 		for j := min(sectionStartPos+sectionSize, size-1); j < size; j++ {
 			if data[j] == '\n' {
-				// log.Printf("start: %10d, len: %10d, end: %10d", sectionStartPos, int64(j-sectionStartPos), j)
+				log.Printf("start: %10d, len: %10d, end: %10d", sectionStartPos, int64(j-sectionStartPos), j)
 				sectionReaders[i] = io.NewSectionReader(r, int64(sectionStartPos), int64(j-sectionStartPos))
+
+				// XXX this doesn't work at all, can't call madvise on subsections
+				err = syscall.Madvise(data[sectionStartPos:j], syscall.MADV_SEQUENTIAL|syscall.MADV_WILLNEED)
+				if err != nil {
+					return nil, fmt.Errorf("madvise: %w", err)
+				}
+
 				sectionStartPos = j + 1
 				break
 			}

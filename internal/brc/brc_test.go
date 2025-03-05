@@ -61,6 +61,13 @@ func BenchmarkParallelReadSliceFixedInt16UnsafeOpen10m(b *testing.B) {
 	}
 }
 
+func BenchmarkParallelReadSlicePatateLineFixedInt16UnsafeOpenAddr10m(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ParallelRunner("../../data/10m.txt", 8, ParallelReadSlicePatateLineFixedInt16UnsafeOpenAddr)
+	}
+}
+
 func BenchmarkParallelReadSliceFixedInt16Unsafe1b(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {

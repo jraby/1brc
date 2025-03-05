@@ -46,6 +46,13 @@ func (s *StationInt16) NewMeasurement(m int16) {
 	}
 }
 
+func (s *StationInt16) NewMeasurementNoBranch(m int16) {
+	s.N += 1
+	s.Total += int32(m)
+	s.Min = min(m, s.Min)
+	s.Max = max(m, s.Max)
+}
+
 func NewStationInt16(m int16) *StationInt16 {
 	return &StationInt16{
 		Min:   m,
