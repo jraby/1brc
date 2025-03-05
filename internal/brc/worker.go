@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -41,7 +40,7 @@ func chunker(r io.Reader, nreaders int) <-chan *[]byte {
 	ch := make(chan *[]byte, nreaders)
 
 	go func() {
-		runtime.LockOSThread()
+		// runtime.LockOSThread()
 		leftovers := make([]byte, 0, 256)
 		for {
 			chunk := ChunkPool.Get()
@@ -169,14 +168,16 @@ func ParallelChunkChannelFixedInt16UnsafeOpenAddr(chunkCh <-chan *[]byte) []Stat
 	for chunkPtr := range chunkCh {
 		chunk := *chunkPtr
 
-		for len(chunk) > 0 {
-			delim := bytes.IndexByte(chunk, ';')
+		startpos := 0
+		lenchunk := len(chunk)
+		for startpos < lenchunk {
+			delim := bytes.IndexByte(chunk[startpos:], ';')
 			if delim < 0 {
 				log.Fatal("garbage input, ';' not found")
 			}
 
-			name := chunk[:delim]
-			chunk = chunk[delim+1:]
+			name := chunk[startpos : startpos+delim]
+			startpos += delim + 1
 
 			h := byteHash(name) % uint32(len(stationTable))
 
@@ -188,12 +189,12 @@ func ParallelChunkChannelFixedInt16UnsafeOpenAddr(chunkCh <-chan *[]byte) []Stat
 			//	panic("woupelai")
 			//}
 
-			nl := bytes.IndexByte(chunk, '\n')
-			if delim < 0 {
+			nl := bytes.IndexByte(chunk[startpos:], '\n')
+			if nl < 0 {
 				log.Fatal("garbage input, '\\n' not found")
 			}
-			value := chunk[:nl]
-			chunk = chunk[nl+1:]
+			value := chunk[startpos : startpos+nl]
+			startpos += nl + 1
 
 			m, err := ParseFixedPoint16Unsafe(value)
 			if err != nil {
