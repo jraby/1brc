@@ -27,8 +27,6 @@ func NewMmapedSectionReaders(inputFile string, nsections int) ([]*io.SectionRead
 		return nil, fmt.Errorf("mmap.Open: %w", err)
 	}
 
-	//		syscall.Madvise(, syscall.MADV_SEQUENTIAL | syscall.MADV_WILLNEED)
-
 	sectionReaders := make([]*io.SectionReader, nsections)
 	mmlen := mm.Len()
 	sectionSize := mmlen / nsections
