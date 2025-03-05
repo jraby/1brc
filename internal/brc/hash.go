@@ -2,15 +2,17 @@ package brc
 
 import (
 	"fmt"
+	"hash"
+	"hash/fnv"
 	"strings"
-
-	"github.com/cespare/xxhash/v2"
+	"unsafe"
 )
 
 type StringHashTable struct {
 	buckets      []*Entry
 	nbuckets     uint64
 	knownEntries []string
+	hasher       hash.Hash64
 }
 
 func NewStringHashTable(nbuckets uint64) (*StringHashTable, error) {
@@ -22,6 +24,7 @@ func NewStringHashTable(nbuckets uint64) (*StringHashTable, error) {
 		buckets:      make([]*Entry, nbuckets),
 		nbuckets:     nbuckets,
 		knownEntries: make([]string, 0, nbuckets),
+		hasher:       fnv.New64(),
 	}, nil
 }
 
@@ -60,10 +63,41 @@ func stringHash(s string) uint32 {
 	return hash
 }
 
+func byteHash(b []byte) uint32 {
+	const prime32 = uint32(16777619)
+	hash := uint32(2166136261)
+
+	i := 0
+	length := len(b)
+
+	// Process 4 bytes at a time
+	for ; i+3 < length; i += 4 {
+		hash ^= uint32(b[i])
+		hash *= prime32
+		hash ^= uint32(b[i+1])
+		hash *= prime32
+		hash ^= uint32(b[i+2])
+		hash *= prime32
+		hash ^= uint32(b[i+3])
+		hash *= prime32
+	}
+
+	// Process remaining bytes
+	for ; i < length; i++ {
+		hash ^= uint32(b[i])
+		hash *= prime32
+	}
+
+	return hash
+}
+
 func (t *StringHashTable) getOrCreate(name string) *Station {
 	// h := stringHash(name) % BUCKETS
 	// h := stringHash(name) & (t.nbuckets - 1)
-	h := xxhash.Sum64String(name) & (t.nbuckets - 1)
+	// h := xxhash.Sum64String(name) & (t.nbuckets - 1)
+	t.hasher.Reset()
+	t.hasher.Write([]byte(name))
+	h := t.hasher.Sum64() & (t.nbuckets - 1)
 
 	for e := t.buckets[h]; e != nil; e = e.next {
 		if e.name == name {
@@ -92,6 +126,7 @@ type StringHashTableInt16Stations struct {
 	buckets      []*EntryInt16Station
 	nbuckets     uint64
 	knownEntries []string
+	hasher       hash.Hash64
 }
 
 func NewStringHashTableInt16Stations(nbuckets uint64) (*StringHashTableInt16Stations, error) {
@@ -103,6 +138,7 @@ func NewStringHashTableInt16Stations(nbuckets uint64) (*StringHashTableInt16Stat
 		buckets:      make([]*EntryInt16Station, nbuckets),
 		nbuckets:     nbuckets,
 		knownEntries: make([]string, 0, nbuckets),
+		hasher:       fnv.New64(),
 	}, nil
 }
 
@@ -112,27 +148,31 @@ type EntryInt16Station struct {
 	next    *EntryInt16Station
 }
 
-func (t *StringHashTableInt16Stations) getOrCreate(name string) *StationInt16 {
+func (t *StringHashTableInt16Stations) getOrCreate(name []byte) *StationInt16 {
 	// h := stringHash(name) % BUCKETS
-	// h := stringHash(name) & (t.nbuckets - 1)
-	h := xxhash.Sum64String(name) & (t.nbuckets - 1)
+	h := uint64(byteHash(name)) & (t.nbuckets - 1)
+	// h := xxhash.Sum64String(name) & (t.nbuckets - 1)
+	// t.hasher.Reset()
+	// t.hasher.Write(name)
+	// h := t.hasher.Sum64() & (t.nbuckets - 1)
 
+	namestr := unsafe.String(unsafe.SliceData(name), len(name))
 	for e := t.buckets[h]; e != nil; e = e.next {
-		if e.name == name {
+		if e.name == namestr {
 			return e.station
 		}
 	}
 
-	name = strings.Clone(name)
+	namestr = strings.Clone(namestr)
 	// Not found, create new
 	newEntry := &EntryInt16Station{
-		name:    name,
+		name:    namestr,
 		station: &StationInt16{},
 	}
 
 	newEntry.next = t.buckets[h]
 	t.buckets[h] = newEntry
-	t.knownEntries = append(t.knownEntries, name)
+	t.knownEntries = append(t.knownEntries, namestr)
 	return newEntry.station
 }
 

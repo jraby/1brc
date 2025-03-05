@@ -322,12 +322,12 @@ func ReadSliceStringHashFixedInt16Unsafe(input io.Reader) string {
 			log.Fatalf("invalid line: %s", string(line))
 		}
 
-		name := unsafe.String(unsafe.SliceData(line[:fieldSepPos]), fieldSepPos)
+		// name := unsafe.String(unsafe.SliceData(line[:fieldSepPos]), fieldSepPos)
 		m, err := ParseFixedPoint16Unsafe(line[fieldSepPos+1 : len(line)-1])
 		if err != nil {
 			log.Fatal(err)
 		}
-		station := stations.getOrCreate(name)
+		station := stations.getOrCreate(line[:fieldSepPos])
 		if station.N == 0 {
 			station.N = 1
 			station.Total = int32(m)
@@ -345,7 +345,7 @@ func ReadSliceStringHashFixedInt16Unsafe(input io.Reader) string {
 	out := make([]string, 0, len(stations.KnownEntries())+2)
 	out = append(out, "{")
 	for i, k := range keys {
-		station := stations.getOrCreate(k)
+		station := stations.getOrCreate([]byte(k))
 		if i == len(keys)-1 {
 			out = append(out, fmt.Sprintf("%s=%s", k, station.FancyPrint()))
 			//			out = append(out, fmt.Sprintf("%s=%d.%d/%d.%d/%d.%d", k,

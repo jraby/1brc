@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"log"
 	"runtime"
@@ -255,6 +254,7 @@ func parallelReadSliceFixedInt16UnsafeBSearchNames(input io.Reader) []StationInt
 
 func ParallelReadSliceFixedInt16UnsafeOpenAddr(inputFile string) string {
 	n := runtime.NumCPU()
+	// n := 1
 	readers, err := NewMmapedSectionReaders(inputFile, n)
 	if err != nil {
 		log.Fatalf("NewMmapedSectionReaders: %s", err)
@@ -324,7 +324,7 @@ func ParallelReadSliceFixedInt16UnsafeOpenAddr(inputFile string) string {
 
 func parallelReadSliceFixedInt16UnsafeOpenAddr(input io.Reader) []StationInt16 {
 	stationTable := make([]StationInt16, 65535)
-	hasher := fnv.New64a()
+	// hasher := fnv.New64a()
 	// hasher := murmur3.New64()
 	// hasher := crc64.New(crc64.MakeTable(crc64.ECMA))
 	br := bufio.NewReaderSize(input, 64*1024)
@@ -349,15 +349,17 @@ func parallelReadSliceFixedInt16UnsafeOpenAddr(input io.Reader) []StationInt16 {
 		}
 
 		// h := xxhash.Sum64(line[:fieldSepPos]) % uint64(len(stationTable))
-		hasher.Reset()
-		hasher.Write(line[:fieldSepPos])
-		h := hasher.Sum64() % uint64(len(stationTable))
+		// hasher.Reset()
+		// hasher.Write(line[:fieldSepPos])
+		// h := hasher.Sum64() % uint64(len(stationTable))
+
+		h := byteHash(line[:fieldSepPos]) % uint32(len(stationTable))
 
 		station := &stationTable[h]
 		if station.N > 0 {
-			if !bytes.Equal(station.Name, line[:fieldSepPos]) {
-				panic("woupelai")
-			}
+			//if !bytes.Equal(station.Name, line[:fieldSepPos]) {
+			//	panic("woupelai")
+			//}
 			station.NewMeasurement(m)
 		} else {
 			station.Name = bytes.Clone(line[:fieldSepPos])
