@@ -3,7 +3,7 @@ package brc
 import "fmt"
 
 func ParseFixedPoint16Unsafe(input []byte) (int16, error) {
-	var value, prev int16
+	var value int16 //, prev int16
 	var mult int16 = 1
 	for i := len(input) - 1; i >= 0; i-- {
 		if input[i] == '-' {
@@ -12,12 +12,12 @@ func ParseFixedPoint16Unsafe(input []byte) (int16, error) {
 		}
 
 		if input[i] != '.' {
-			prev = value
+			// prev = value
 			value += mult * int16(input[i]-'0')
 			mult *= 10
-			if (prev ^ value) < 0 {
-				return 0, fmt.Errorf("sign change / over/under flow")
-			}
+			//if (prev ^ value) < 0 {
+			//	return 0, fmt.Errorf("sign change / over/under flow: %s", input)
+			//}
 		}
 	}
 	return value, nil

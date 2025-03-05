@@ -68,6 +68,20 @@ func BenchmarkParallelReadSlicePatateLineFixedInt16UnsafeOpenAddr10m(b *testing.
 	}
 }
 
+func BenchmarkParallelChunkChannelFixedInt16UnsafeOpenAddr10m(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ParallelWorkerRunner("../../data/10m.txt", 8, ParallelChunkChannelFixedInt16UnsafeOpenAddr)
+	}
+}
+
+func BenchmarkParallelChunkChannelFixedInt16UnsafeOpenAddr1b(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ParallelWorkerRunner("../../data/1b.txt", 8, ParallelChunkChannelFixedInt16UnsafeOpenAddr)
+	}
+}
+
 func BenchmarkParallelReadSliceFixedInt16Unsafe1b(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {

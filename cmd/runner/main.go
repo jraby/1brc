@@ -59,6 +59,8 @@ func main() {
 		fmt.Println(brc.ParallelReadSliceFixedInt16UnsafeOpenAddr(*inputFile))
 	case "ParallelReadSlicePatateLineFixedInt16UnsafeOpenAddr":
 		fmt.Println(brc.ParallelRunner(*inputFile, *nworkers, brc.ParallelReadSlicePatateLineFixedInt16UnsafeOpenAddr))
+	case "ParallelChunkChannelFixedInt16UnsafeOpenAddr":
+		fmt.Println(brc.ParallelWorkerRunner(*inputFile, *nworkers, brc.ParallelChunkChannelFixedInt16UnsafeOpenAddr))
 	default:
 		log.Fatalf("unknown func: %s", *parserFuncName)
 	}
