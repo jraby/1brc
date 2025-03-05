@@ -50,6 +50,8 @@ func main() {
 		fmt.Println(brc.ReadSliceFixedInt16Unsafe(f))
 	case "readslicehashfixed16unsafe":
 		fmt.Println(brc.ReadSliceStringHashFixedInt16Unsafe(f))
+	case "parallelreadslicefixed16unsafe":
+		fmt.Println(brc.Carotte(*inputFile))
 	default:
 		log.Fatalf("unknown func: %s", *parserFuncName)
 	}

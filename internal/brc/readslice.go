@@ -290,21 +290,10 @@ func ReadSliceFixedInt16Unsafe(input io.Reader) string {
 	out = append(out, "{")
 	for i, k := range keys {
 		station := stations[k]
-		// log.Printf("%s: %+v", k, station)
 		if i == len(keys)-1 {
 			out = append(out, fmt.Sprintf("%s=%s", k, station.FancyPrint()))
-			//out = append(out, fmt.Sprintf("%s=%d.%d/%d.%d/%d.%d", k,
-			//	stations[k].Min/10, stations[k].Min%10,
-			//	stations[k].Total/stations[k].N/10, stations[k].Total/stations[k].N%10,
-			//	stations[k].Max/10, stations[k].Max%10,
-			//))
 		} else {
 			out = append(out, fmt.Sprintf("%s=%s, ", k, station.FancyPrint()))
-			//out = append(out, fmt.Sprintf("%s=%d.%d/%d.%d/%d.%d, ", k,
-			//	stations[k].Min/10, stations[k].Min%10,
-			//	stations[k].Total/stations[k].N/10, stations[k].Total/stations[k].N%10,
-			//	stations[k].Max/10, stations[k].Max%10,
-			//))
 		}
 	}
 	out = append(out, "}")
