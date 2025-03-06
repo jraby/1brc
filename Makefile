@@ -1,5 +1,5 @@
 bench:
-	go test -run XXX -bench . -benchtime 5s ./...
+	go test -run XXX -bench 10m -benchtime 1s ./...
 run: runner
 #	/bin/time -p bin/baseline -i data/10m.txt
 #	/bin/time -p bin/faster -i data/10m.txt
