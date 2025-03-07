@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"runtime/pprof"
 	"sort"
@@ -19,8 +20,14 @@ func main() {
 	chunkSize := flag.Int("chunksize", 256*1024, "size of the chunks to be processed by workers")
 	chunkerChannelCap := flag.Int("channel-cap", 256, "capacity of the chunk channel")
 	inputFile := flag.String("f", "data/10m.txt", "input file")
+	var loglevel slog.Level
+	flag.TextVar(&loglevel, "loglevel", slog.LevelInfo, "loglevel")
 
 	flag.Parse()
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: loglevel,
+	})))
 
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
@@ -48,6 +55,7 @@ func main() {
 		if err := chunker.Run(); err != nil {
 			log.Fatalf("chunker failed: %s", err)
 		}
+		slog.Debug("Chunker done")
 	}()
 
 	wg.Add(*nworkers)
@@ -55,6 +63,7 @@ func main() {
 		go func() {
 			defer wg.Done()
 			stationTables[i] = fastbrc.ParseWorker(chunker)
+			slog.Debug("Worker done", "id", i)
 		}()
 	}
 
@@ -108,4 +117,5 @@ func main() {
 	}
 	out = append(out, "}")
 	fmt.Println(strings.Join(out, ""))
+	slog.Debug("all done")
 }
