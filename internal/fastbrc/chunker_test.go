@@ -3,7 +3,9 @@ package fastbrc
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"os"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -41,16 +43,15 @@ func TestChunkerMano(t *testing.T) {
 	assert.Equal(t, b, b2)
 }
 
-func BenchmarkChunker1b(b *testing.B) {
+func benchmarkChunker1b(b *testing.B, nworkers, chCap, chunkSize int) {
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		f, err := os.Open("../../data/1b.txt")
 		if err != nil {
 			b.Fatalf("open: %s", err)
 		}
 		defer f.Close()
-		nworkers := 8
-		chunker := NewChunker(f, nworkers*8, 256*1024)
+		chunker := NewChunker(f, chCap, chunkSize)
 		wg := sync.WaitGroup{}
 		wg.Add(nworkers)
 
@@ -75,5 +76,17 @@ func BenchmarkChunker1b(b *testing.B) {
 			}()
 		}
 		wg.Wait()
+	}
+}
+
+func BenchmarkChunker1b(b *testing.B) {
+	for nworkers := 1; nworkers <= runtime.NumCPU(); nworkers++ {
+		for chCap := nworkers; chCap <= nworkers*4; chCap += 4 {
+			for _, chunkSize := range []int{64 << 10, 128 << 10, 256 << 10, 512 << 10, 1024 << 10, 2048 << 10, 4096 << 10} {
+				b.Run(fmt.Sprintf("nworker%02d-chcap%03d-chunksize%04dk", nworkers, chCap, chunkSize>>10), func(b *testing.B) {
+					benchmarkChunker1b(b, nworkers, chCap, chunkSize)
+				})
+			}
+		}
 	}
 }

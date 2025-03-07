@@ -1,6 +1,6 @@
 build: bin/fastbrc bin/runner
 
-PERF_STAT_E = task-clock:u,page-faults:u,instructions:u,cycles:u,branches:u,branch-misses:u,cache-misses,cache-references,L1-dcache-load-misses,L1-dcache-loads,L1-dcache-stores,LLC-load-misses,L2_RQSTS.MISS,L2_RQSTS.REFERENCES
+PERF_STAT_E = task-clock:u,page-faults:u,instructions:u,cycles:u,branches:u,branch-misses:u,cache-misses,cache-references,L1-dcache-load-misses,L1-dcache-loads,L1-dcache-stores,LLC-load-misses
 run: build
 	perf stat -e $(PERF_STAT_E) bin/fastbrc -f data/1b.txt -n $$(nproc)
 bench:
