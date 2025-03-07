@@ -93,6 +93,8 @@ type ChunkGetter interface {
 
 func ParseWorker(chunker ChunkGetter) []StationInt16 {
 	stationTable := make([]StationInt16, 65535)
+	stationTablePtr := unsafe.Pointer(unsafe.SliceData(stationTable))
+	stationSize := unsafe.Sizeof(StationInt16{})
 	for i := range stationTable {
 		stationTable[i].Min = 32767
 		stationTable[i].Max = -32767
@@ -105,10 +107,12 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 		}
 
 		chunk := *chunkPtr
+		//		chunkData := unsafe.Pointer(unsafe.SliceData(*chunkPtr))
 
 		startpos := 0
 		chunkmaxpos := len(chunk) - 1
 		for startpos <= chunkmaxpos {
+			// patate := unsafe.Slice((*byte)(unsafe.Add(chunkData, startpos)), chunkmaxpos-startpos)
 			delim := bytes.IndexByte(chunk[startpos:chunkmaxpos], ';')
 			//if delim < 0 {
 			//	log.Fatal("garbage input, ';' not found")
@@ -120,7 +124,8 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 			// h := byteHash(name) % uint32(len(stationTable))
 			h := byteHashBCE(name) % uint32(len(stationTable))
 
-			station := &stationTable[h]
+			// station := &stationTable[h]
+			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint32(stationSize)))
 			if station.N == 0 {
 				station.Name = bytes.Clone(name)
 			}

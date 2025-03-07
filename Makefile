@@ -9,6 +9,9 @@ bench:
 bin/fastbrc:  *.go internal/fastbrc/*.go | bin
 	go build -o bin/fastbrc ./main.go
 
+fastbrc: bin/fastbrc
+	diff <(./output2diffable.sh ./data/10m.txt.expect) <(bin/fastbrc -n 8 -f data/10m.txt | ./output2diffable.sh /dev/stdin) || true
+
 bin/runner:  cmd/runner/*.go internal/brc/*.go | bin
 	go build -o bin/runner ./cmd/runner 
 
