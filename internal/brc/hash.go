@@ -63,6 +63,7 @@ func stringHash(s string) uint32 {
 	return hash
 }
 
+// unrolled fnv1a
 func byteHash(b []byte) uint32 {
 	const prime32 = uint32(16777619)
 	hash := uint32(2166136261)
@@ -85,6 +86,91 @@ func byteHash(b []byte) uint32 {
 	// Process remaining bytes
 	for ; i < length; i++ {
 		hash ^= uint32(b[i])
+		hash *= prime32
+	}
+
+	return hash
+}
+
+func ByteHashBCE(b []byte) uint32 {
+	const prime32 = uint32(16777619)
+	hash := uint32(2166136261)
+
+	var i int
+	length := len(b)
+
+	// bp := unsafe.Pointer(unsafe.SliceData(b))
+	bp := unsafe.Pointer(unsafe.SliceData(b))
+	// Process 4 bytes at a time
+
+	// log.Printf("uint32(b[0]): %v", uint32(b[0]))
+	// log.Printf(" %v", uint32(*(*byte)(unsafe.Add(bp, 0))))
+	// log.Printf(" %v", *(*byte)(bp))
+	for i = 0; i+3 <= length-1; i += 4 {
+		// hash ^= uint32(b[i])
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i)))
+		hash *= prime32
+		// hash ^= uint32(b[i+1])
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i+1)))
+		hash *= prime32
+		// hash ^= uint32(b[i+2])
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i+2)))
+		hash *= prime32
+		// hash ^= uint32(b[i+3])
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i+3)))
+		hash *= prime32
+	}
+
+	// Process remaining bytes
+	for ; i <= length-1; i++ {
+		// hash ^= uint32(b[i])
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i)))
+		hash *= prime32
+	}
+
+	// so this does 1 bound check, but jumps a lot so it is slower
+	//_ = b[length-1]
+	//// Process remaining bytes
+	//for i := 0; i <= length-1; i++ {
+	//	hash ^= uint32(b[i])
+	//	hash *= prime32
+	//}
+
+	return hash
+}
+
+func fnv1a(b []byte) uint32 {
+	const prime32 = uint32(16777619)
+	hash := uint32(2166136261)
+
+	length := len(b)
+	// Process remaining bytes
+	for i := 0; i < length; i++ {
+		hash ^= uint32(b[i])
+		hash *= prime32
+	}
+
+	return hash
+}
+
+func fnv1aRangeIndex(b []byte) uint32 {
+	const prime32 = uint32(16777619)
+	hash := uint32(2166136261)
+
+	for i := range b {
+		hash ^= uint32(b[i])
+		hash *= prime32
+	}
+
+	return hash
+}
+
+func fnv1aRange(bs []byte) uint32 {
+	const prime32 = uint32(16777619)
+	hash := uint32(2166136261)
+
+	for _, b := range bs {
+		hash ^= uint32(b)
 		hash *= prime32
 	}
 

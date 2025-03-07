@@ -5,7 +5,7 @@ import (
 	"log"
 )
 
-// byteHash returns the fnv1 hash of b
+// byteHash returns the fnv1a hash of b
 func byteHash(b []byte) uint32 {
 	const prime32 = uint32(16777619)
 	hash := uint32(2166136261)
@@ -86,6 +86,7 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 			startpos += delim + 1
 
 			h := byteHash(name) % uint32(len(stationTable))
+			// h := brc.ByteHashBCE(name) % uint32(len(stationTable))
 
 			station := &stationTable[h]
 			if station.N == 0 {
