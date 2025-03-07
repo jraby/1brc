@@ -107,16 +107,12 @@ func ByteHashBCE(b []byte) uint32 {
 	// log.Printf(" %v", uint32(*(*byte)(unsafe.Add(bp, 0))))
 	// log.Printf(" %v", *(*byte)(bp))
 	for i = 0; i+3 <= length-1; i += 4 {
-		// hash ^= uint32(b[i])
 		hash ^= uint32(*(*byte)(unsafe.Add(bp, i)))
 		hash *= prime32
-		// hash ^= uint32(b[i+1])
 		hash ^= uint32(*(*byte)(unsafe.Add(bp, i+1)))
 		hash *= prime32
-		// hash ^= uint32(b[i+2])
 		hash ^= uint32(*(*byte)(unsafe.Add(bp, i+2)))
 		hash *= prime32
-		// hash ^= uint32(b[i+3])
 		hash ^= uint32(*(*byte)(unsafe.Add(bp, i+3)))
 		hash *= prime32
 	}

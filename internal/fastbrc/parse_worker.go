@@ -2,7 +2,7 @@ package fastbrc
 
 import (
 	"bytes"
-	"log"
+	"unsafe"
 )
 
 // byteHash returns the fnv1a hash of b
@@ -28,6 +28,38 @@ func byteHash(b []byte) uint32 {
 	// Process remaining bytes
 	for ; i < length; i++ {
 		hash ^= uint32(b[i])
+		hash *= prime32
+	}
+
+	return hash
+}
+
+func byteHashBCE(b []byte) uint32 {
+	const prime32 = uint32(16777619)
+	hash := uint32(2166136261)
+
+	var i int
+	length := len(b)
+
+	// unsafe, the compiler was convinced  it needed bound checks
+	// saves ~200ns per call on i7-7700 and 100ns on ryzen 9700 (both ~10% per call)
+	bp := unsafe.Pointer(unsafe.SliceData(b))
+
+	// Process 4 bytes at a time
+	for i = 0; i+3 <= length-1; i += 4 {
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i)))
+		hash *= prime32
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i+1)))
+		hash *= prime32
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i+2)))
+		hash *= prime32
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i+3)))
+		hash *= prime32
+	}
+
+	// Process remaining bytes
+	for ; i <= length-1; i++ {
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i)))
 		hash *= prime32
 	}
 
@@ -75,18 +107,18 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 		chunk := *chunkPtr
 
 		startpos := 0
-		lenchunk := len(chunk)
-		for startpos < lenchunk {
-			delim := bytes.IndexByte(chunk[startpos:], ';')
-			if delim < 0 {
-				log.Fatal("garbage input, ';' not found")
-			}
+		chunkmaxpos := len(chunk) - 1
+		for startpos <= chunkmaxpos {
+			delim := bytes.IndexByte(chunk[startpos:chunkmaxpos], ';')
+			//if delim < 0 {
+			//	log.Fatal("garbage input, ';' not found")
+			//}
 
 			name := chunk[startpos : startpos+delim]
 			startpos += delim + 1
 
-			h := byteHash(name) % uint32(len(stationTable))
-			// h := brc.ByteHashBCE(name) % uint32(len(stationTable))
+			// h := byteHash(name) % uint32(len(stationTable))
+			h := byteHashBCE(name) % uint32(len(stationTable))
 
 			station := &stationTable[h]
 			if station.N == 0 {
@@ -99,16 +131,16 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 			//}
 
 			nl := bytes.IndexByte(chunk[startpos:], '\n')
-			if nl < 0 {
-				log.Fatal("garbage input, '\\n' not found")
-			}
+			//if nl < 0 {
+			//	log.Fatal("garbage input, '\\n' not found")
+			//}
 			value := chunk[startpos : startpos+nl]
 			startpos += nl + 1
 
-			m, err := ParseFixedPoint16Unsafe(value)
-			if err != nil {
-				log.Fatal(err)
-			}
+			m, _ := ParseFixedPoint16Unsafe(value)
+			//if err != nil {
+			//	log.Fatal(err)
+			//}
 
 			station.NewMeasurement(m)
 		}
