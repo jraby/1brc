@@ -69,21 +69,26 @@ func byteHashBCE(b []byte) uint32 {
 // ParseFixedPoint16Unsafe parses input as a 1 decimal place float and
 // represents it as an int16
 // No check for overflow or invalid values.
-func ParseFixedPoint16Unsafe(input []byte) (int16, error) {
-	var value int16
-	var mult int16 = 1
-	for i := len(input) - 1; i >= 0; i-- {
-		if input[i] == '-' {
-			value = -value
-			continue
-		}
 
-		if input[i] != '.' {
-			value += mult * int16(input[i]-'0')
-			mult *= 10
-		}
+// ////go:noinline
+func ParseFixedPoint16Unsafe(input []byte) int16 {
+	bp := unsafe.Pointer(unsafe.SliceData(input))
+
+	i := len(input) - 1
+	value := int16(*(*byte)(unsafe.Add(bp, i)) - '0')
+	i -= 2 // skip last num + dot
+	var mult int16 = 10
+
+	for ; i > 0; i-- {
+		value += mult * int16(*(*byte)(unsafe.Add(bp, i))-'0')
+		mult *= 10
 	}
-	return value, nil
+	if *(*byte)(bp) == '-' {
+		value = -value
+	} else {
+		value += mult * int16(*(*byte)(bp)-'0')
+	}
+	return value
 }
 
 type ChunkGetter interface {
@@ -106,42 +111,39 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 			break
 		}
 
-		chunk := *chunkPtr
-		// chunkData := unsafe.Pointer(unsafe.SliceData(*chunkPtr))
-
 		startpos := 0
-		chunkmaxpos := len(chunk) - 1
+		chunkmaxpos := len(*chunkPtr) - 1
 		for startpos <= chunkmaxpos {
 			// patate := unsafe.Slice((*byte)(unsafe.Add(chunkData, startpos)), chunkmaxpos-startpos)
-			delim := bytes.IndexByte(chunk[startpos:chunkmaxpos], ';')
+			delim := bytes.IndexByte((*chunkPtr)[startpos:chunkmaxpos], ';')
 			//delim := bytes.IndexByte(patate, ';')
 			//if delim < 0 {
 			//	log.Fatal("garbage input, ';' not found")
 			//}
 
-			name := chunk[startpos : startpos+delim]
-			startpos += delim + 1
+			// name := (*chunkPtr)[startpos : startpos+delim]
 
-			h := byteHashBCE(name) % uint32(len(stationTable))
+			h := byteHashBCE((*chunkPtr)[startpos:startpos+delim]) % uint32(len(stationTable))
 
 			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint32(stationSize)))
 			if station.N == 0 {
-				station.Name = bytes.Clone(name)
+				station.Name = bytes.Clone((*chunkPtr)[startpos : startpos+delim])
 			}
+			startpos += delim + 1
 
 			// enable to check if there are collisions :-)
 			//if !bytes.Equal(station.Name, name) {
 			//	panic("woupelai")
 			//}
 
-			nl := bytes.IndexByte(chunk[startpos:], '\n')
+			nl := bytes.IndexByte((*chunkPtr)[startpos:], '\n')
 			//if nl < 0 {
 			//	log.Fatal("garbage input, '\\n' not found")
 			//}
-			value := chunk[startpos : startpos+nl]
+			value := (*chunkPtr)[startpos : startpos+nl]
 			startpos += nl + 1
 
-			m, _ := ParseFixedPoint16Unsafe(value)
+			m := ParseFixedPoint16Unsafe(value)
 			//if err != nil {
 			//	log.Fatal(err)
 			//}

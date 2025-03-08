@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"os"
@@ -14,39 +15,10 @@ import (
 	"1brc/internal/fastbrc"
 )
 
-func main() {
-	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
-	nworkers := flag.Int("n", 1, "number of workers for parallel funcs")
-	chunkSize := flag.Int("chunksize", 256*1024, "size of the chunks to be processed by workers")
-	chunkerChannelCap := flag.Int("channel-cap", 256, "capacity of the chunk channel")
-	inputFile := flag.String("f", "data/10m.txt", "input file")
-	var loglevel slog.Level
-	flag.TextVar(&loglevel, "loglevel", slog.LevelInfo, "loglevel")
+func run(reader io.Reader, nworkers, chunkerChannelCap, chunkSize int) string {
+	chunker := fastbrc.NewChunker(reader, chunkerChannelCap, chunkSize)
 
-	flag.Parse()
-
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: loglevel,
-	})))
-
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-	}
-
-	f, err := os.Open(*inputFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-
-	chunker := fastbrc.NewChunker(f, *chunkerChannelCap, *chunkSize)
-
-	stationTables := make([][]fastbrc.StationInt16, *nworkers)
+	stationTables := make([][]fastbrc.StationInt16, nworkers)
 	wg := sync.WaitGroup{}
 
 	wg.Add(1)
@@ -58,8 +30,8 @@ func main() {
 		slog.Debug("Chunker done")
 	}()
 
-	wg.Add(*nworkers)
-	for i := range *nworkers {
+	wg.Add(nworkers)
+	for i := range nworkers {
 		go func() {
 			defer wg.Done()
 			stationTables[i] = fastbrc.ParseWorker(chunker)
@@ -116,6 +88,39 @@ func main() {
 		}
 	}
 	out = append(out, "}")
-	fmt.Println(strings.Join(out, ""))
 	slog.Debug("all done")
+	return strings.Join(out, "")
+}
+
+func main() {
+	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
+	nworkers := flag.Int("n", 1, "number of workers for parallel funcs")
+	chunkSize := flag.Int("chunksize", 256*1024, "size of the chunks to be processed by workers")
+	chunkerChannelCap := flag.Int("channel-cap", 256, "capacity of the chunk channel")
+	inputFile := flag.String("f", "data/10m.txt", "input file")
+	var loglevel slog.Level
+	flag.TextVar(&loglevel, "loglevel", slog.LevelInfo, "loglevel")
+
+	flag.Parse()
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: loglevel,
+	})))
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+
+	f, err := os.Open(*inputFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	fmt.Println(run(f, *nworkers, *chunkerChannelCap, *chunkSize))
 }
