@@ -70,14 +70,22 @@ func byteHashBCE(b []byte) uint32 {
 // represents it as an int16
 // No check for overflow or invalid values.
 
-// ////go:noinline
 func ParseFixedPoint16Unsafe(input []byte) int16 {
+	// data always has at least 3 bytes: ...N.N
+	// parse them out of the loop
 	bp := unsafe.Pointer(unsafe.SliceData(input))
 
 	i := len(input) - 1
+	// decimal
 	value := int16(*(*byte)(unsafe.Add(bp, i)) - '0')
-	i -= 2 // skip last num + dot
 	var mult int16 = 10
+	// skip dot, parse first number of int part
+	value += mult * int16(*(*byte)(unsafe.Add(bp, i-2))-'0')
+	mult *= 10
+	i -= 3 // skip last num + dot
+	if i < 0 {
+		return value
+	}
 
 	for ; i > 0; i-- {
 		value += mult * int16(*(*byte)(unsafe.Add(bp, i))-'0')
@@ -140,15 +148,42 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 			//if nl < 0 {
 			//	log.Fatal("garbage input, '\\n' not found")
 			//}
-			value := (*chunkPtr)[startpos : startpos+nl]
+			valueB := (*chunkPtr)[startpos : startpos+nl]
 			startpos += nl + 1
 
-			m := ParseFixedPoint16Unsafe(value)
+			bp := unsafe.Pointer(unsafe.SliceData(valueB))
+
+			i := len(valueB) - 1
+			// decimal
+			value := int16(*(*byte)(unsafe.Add(bp, i)) - '0')
+			var mult int16 = 10
+			// skip dot, parse first number of int part
+			value += mult * int16(*(*byte)(unsafe.Add(bp, i-2))-'0')
+			mult *= 10
+			i -= 3 // skip last num + dot
+			if i < 0 {
+				// log.Printf("in:  %s", string(valueB))
+				// log.Printf("out: %d", value)
+				station.NewMeasurement(value)
+			} else {
+				for ; i > 0; i-- {
+					value += mult * int16(*(*byte)(unsafe.Add(bp, i))-'0')
+					mult *= 10
+				}
+				if *(*byte)(bp) == '-' {
+					value = -value
+				} else {
+					value += mult * int16(*(*byte)(bp)-'0')
+				}
+				// log.Printf("in:  %s", string(valueB))
+				// log.Printf("out: %d", value)
+				station.NewMeasurement(value)
+			}
+			//m := ParseFixedPoint16Unsafe(value)
 			//if err != nil {
 			//	log.Fatal(err)
 			//}
 
-			station.NewMeasurement(m)
 		}
 
 		chunker.ReleaseChunk(chunkPtr)
