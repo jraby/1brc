@@ -1,8 +1,11 @@
 build: bin/fastbrc bin/runner
 
 PERF_STAT_E = task-clock:u,page-faults:u,instructions:u,cycles:u,branches:u,branch-misses:u,cache-misses,cache-references,L1-dcache-load-misses,L1-dcache-loads,L1-dcache-stores,LLC-load-misses
+NPROC?= $(shell nproc)
+CHANNEL_CAP?=$(NPROC)
+CHUNKSIZE?=$(shell echo $$((2048*1024)))
 run: build
-	perf stat -e $(PERF_STAT_E) bin/fastbrc -f data/1b.txt -n $$(nproc)
+	perf stat -e $(PERF_STAT_E) bin/fastbrc -f data/1b.txt -n $(NPROC) -channel-cap $(CHANNEL_CAP) -chunksize $(CHUNKSIZE)
 bench:
 	go test -run XXX -bench 10m -benchtime 1s ./...
 
