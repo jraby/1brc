@@ -449,14 +449,14 @@ func xxh3F(b []byte) uint32 {
 	return uint32(xxh3.Hash(b))
 }
 
-func BenchmarkHashByteXxHashNew64(b *testing.B)     { benchmarkHash(b, xxHashNew) }
-func BenchmarkHashByteXxHash64(b *testing.B)        { benchmarkHash(b, xxHash) }
-func BenchmarkHashByteXxh3(b *testing.B)            { benchmarkHash(b, xxh3F) }
-func BenchmarkHashByteHashUnrolled4(b *testing.B)   { benchmarkHash(b, byteHash) }
-func BenchmarkHashFnv1a(b *testing.B)               { benchmarkHash(b, fnv1a) }
-func BenchmarkHashFnv1aRangeIndex(b *testing.B)     { benchmarkHash(b, fnv1aRangeIndex) }
-func BenchmarkHashFnv1aRange(b *testing.B)          { benchmarkHash(b, fnv1aRange) }
-func BenchmarkHashByteHashUnrolledBCE(b *testing.B) { benchmarkHash(b, ByteHashBCE) }
+func BenchmarkHashByteXxHashNew64(b *testing.B)  { benchmarkHash(b, xxHashNew) }
+func BenchmarkHashByteXxHash64(b *testing.B)     { benchmarkHash(b, xxHash) }
+func BenchmarkHashByteXxh3(b *testing.B)         { benchmarkHash(b, xxh3F) }
+func BenchmarkHashFnv1a(b *testing.B)            { benchmarkHash(b, fnv1a) }
+func BenchmarkHashFnv1aRangeIndex(b *testing.B)  { benchmarkHash(b, fnv1aRangeIndex) }
+func BenchmarkHashFnv1aRange(b *testing.B)       { benchmarkHash(b, fnv1aRange) }
+func BenchmarkHashFnv1aUnrolled4(b *testing.B)   { benchmarkHash(b, byteHash) }
+func BenchmarkHashFnv1aUnrolledBCE(b *testing.B) { benchmarkHash(b, ByteHashBCE) }
 func BenchmarkHashStdlibFnv1a(b *testing.B) {
 	hasher := fnv.New32a()
 	benchmarkHash(b, func(b []byte) uint32 {
