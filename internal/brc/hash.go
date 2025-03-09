@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"hash"
 	"hash/fnv"
+	"log"
 	"strings"
 	"unsafe"
 )
@@ -116,6 +117,46 @@ func ByteHashBCE(b []byte) uint32 {
 		hash ^= uint32(*(*byte)(unsafe.Add(bp, i+3)))
 		hash *= prime32
 	}
+
+	// Process remaining bytes
+	for ; i <= length-1; i++ {
+		// hash ^= uint32(b[i])
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i)))
+		hash *= prime32
+	}
+
+	// so this does 1 bound check, but jumps a lot so it is slower
+	//_ = b[length-1]
+	//// Process remaining bytes
+	//for i := 0; i <= length-1; i++ {
+	//	hash ^= uint32(b[i])
+	//	hash *= prime32
+	//}
+
+	return hash
+}
+
+func ByteHashBCE2Unrolls(b []byte) uint32 {
+	const prime32 = uint32(16777619)
+	hash := uint32(2166136261)
+
+	var i int
+	length := len(b)
+
+	bp := unsafe.Pointer(unsafe.SliceData(b))
+	// Process 4 bytes at a time
+
+	for i = 0; i+3 <= length-1; i += 4 {
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i)))
+		hash *= prime32
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i+1)))
+		hash *= prime32
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i+2)))
+		hash *= prime32
+		hash ^= uint32(*(*byte)(unsafe.Add(bp, i+3)))
+		hash *= prime32
+	}
+	log.Printf("hash: %b", hash)
 
 	// Process remaining bytes
 	for ; i <= length-1; i++ {

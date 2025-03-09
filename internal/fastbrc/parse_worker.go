@@ -3,6 +3,8 @@ package fastbrc
 import (
 	"bytes"
 	"unsafe"
+
+	"github.com/zeebo/xxh3"
 )
 
 // byteHash returns the fnv1a hash of b
@@ -97,8 +99,10 @@ type ChunkGetter interface {
 }
 
 func ParseWorker(chunker ChunkGetter) []StationInt16 {
-	stationTable := make([]StationInt16, 65535)
+	// stationTable := make([]StationInt16, 65535)
+	stationTable := make([]StationInt16, 65537)
 	stationTablePtr := unsafe.Pointer(unsafe.SliceData(stationTable))
+	stationTableLen := len(stationTable)
 	stationSize := unsafe.Sizeof(StationInt16{})
 	for i := range stationTable {
 		stationTable[i].Min = 32767
@@ -123,18 +127,19 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 
 			// name := (*chunkPtr)[startpos : startpos+delim]
 
-			h := byteHashBCE((*chunkPtr)[startpos:startpos+delim]) % uint32(len(stationTable))
+			// h := byteHashBCE((*chunkPtr)[startpos:startpos+delim]) % uint32(len(stationTable))
+			h := xxh3.Hash(((*chunkPtr)[startpos : startpos+delim])) % uint64(stationTableLen)
 
-			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint32(stationSize)))
+			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint64(stationSize)))
 			if station.N == 0 {
 				station.Name = bytes.Clone((*chunkPtr)[startpos : startpos+delim])
 			}
-			startpos += delim + 1
-
 			// enable to check if there are collisions :-)
-			//if !bytes.Equal(station.Name, name) {
+			//if !bytes.Equal(station.Name, (*chunkPtr)[startpos:startpos+delim]) {
 			//	panic("woupelai")
 			//}
+
+			startpos += delim + 1
 
 			nl := bytes.IndexByte((*chunkPtr)[startpos:], '\n')
 			//if nl < 0 {

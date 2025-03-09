@@ -7,6 +7,7 @@ import (
 
 	radix "github.com/hashicorp/go-immutable-radix/v2"
 	artv2 "github.com/plar/go-adaptive-radix-tree/v2"
+	"github.com/zeebo/xxh3"
 )
 
 // well this allocates way too much it can't compete
@@ -153,6 +154,103 @@ func BenchmarkStationFindBigArrayFnv1aCollisionCheckUnsafeUnrolled(b *testing.B)
 							}
 						}
 					}
+				}
+				_ = s
+			}
+		}
+		b.StopTimer()
+		for i := range stationTable {
+			stationTable[i] = StationInt16{}
+		}
+		b.StartTimer()
+	}
+}
+
+func fastbyteequal(b1, b2 []byte) bool {
+	lenb1 := len(b1)
+	if lenb1 != len(b2) {
+		return false
+	}
+	i := 0
+	b1p := unsafe.Pointer(unsafe.SliceData(b1))
+	b2p := unsafe.Pointer(unsafe.SliceData(b2))
+	for ; i <= lenb1-1-3; i += 4 {
+		if *(*uint32)(unsafe.Add(b1p, i)) != *(*uint32)(unsafe.Add(b2p, i)) {
+			return false
+		}
+	}
+	for ; i < lenb1-1; i++ {
+		if *(*byte)(unsafe.Add(b1p, i)) != *(*byte)(unsafe.Add(b2p, i)) {
+			return false
+		}
+	}
+	return true
+}
+
+func BenchmarkStationFindBigArrayXxh3(b *testing.B) {
+	b.ReportAllocs()
+	// stationTable := make([]StationInt16, 65535)
+	stationTable := make([]StationInt16, 65537)
+	stationTableLen := uint64(len(stationTable))
+	for i := 0; i < b.N; i++ {
+		for range 8 {
+			for _, name := range names {
+				h := xxh3.Hash(name) % stationTableLen
+				s := &stationTable[h]
+				if len(s.Name) == 0 {
+					s.Name = bytes.Clone(name)
+				}
+				_ = s
+			}
+		}
+		b.StopTimer()
+		for i := range stationTable {
+			stationTable[i] = StationInt16{}
+		}
+		b.StartTimer()
+	}
+}
+
+func BenchmarkStationFindBigArrayXxh3CheckCollisionByteEqual(b *testing.B) {
+	b.ReportAllocs()
+	// stationTable := make([]StationInt16, 65535)
+	stationTable := make([]StationInt16, 65537)
+	stationTableLen := uint64(len(stationTable))
+	for i := 0; i < b.N; i++ {
+		for range 8 {
+			for _, name := range names {
+				h := xxh3.Hash(name) % stationTableLen
+				s := &stationTable[h]
+				if len(s.Name) == 0 {
+					s.Name = bytes.Clone(name)
+				} else if !bytes.Equal(name, s.Name) {
+					panic("woupelai")
+				}
+				_ = s
+			}
+		}
+		b.StopTimer()
+		for i := range stationTable {
+			stationTable[i] = StationInt16{}
+		}
+		b.StartTimer()
+	}
+}
+
+func BenchmarkStationFindBigArrayXxh3CheckCollisionUnrolledEqual(b *testing.B) {
+	b.ReportAllocs()
+	// stationTable := make([]StationInt16, 65535)
+	stationTable := make([]StationInt16, 65537)
+	stationTableLen := uint64(len(stationTable))
+	for i := 0; i < b.N; i++ {
+		for range 8 {
+			for _, name := range names {
+				h := xxh3.Hash(name) % stationTableLen
+				s := &stationTable[h]
+				if len(s.Name) == 0 {
+					s.Name = bytes.Clone(name)
+				} else if !fastbyteequal(name, s.Name) {
+					panic("woupelai")
 				}
 				_ = s
 			}

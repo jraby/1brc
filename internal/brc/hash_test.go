@@ -4,7 +4,9 @@ import (
 	"hash/fnv"
 	"testing"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/zeebo/xxh3"
 )
 
 var names = [][]byte{
@@ -431,6 +433,25 @@ func benchmarkHash(b *testing.B, hashFunc func([]byte) uint32) {
 	}
 }
 
+var patate = xxhash.New()
+
+func xxHashNew(b []byte) uint32 {
+	patate.Reset()
+	patate.Write(b)
+	return uint32(patate.Sum64()) // XXX bad but just for speed test
+}
+
+func xxHash(b []byte) uint32 {
+	return uint32(xxhash.Sum64(b)) // XXX bad but just for speed test
+}
+
+func xxh3F(b []byte) uint32 {
+	return uint32(xxh3.Hash(b))
+}
+
+func BenchmarkHashByteXxHashNew64(b *testing.B)     { benchmarkHash(b, xxHashNew) }
+func BenchmarkHashByteXxHash64(b *testing.B)        { benchmarkHash(b, xxHash) }
+func BenchmarkHashByteXxh3(b *testing.B)            { benchmarkHash(b, xxh3F) }
 func BenchmarkHashByteHashUnrolled4(b *testing.B)   { benchmarkHash(b, byteHash) }
 func BenchmarkHashFnv1a(b *testing.B)               { benchmarkHash(b, fnv1a) }
 func BenchmarkHashFnv1aRangeIndex(b *testing.B)     { benchmarkHash(b, fnv1aRangeIndex) }
