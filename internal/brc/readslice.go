@@ -23,7 +23,7 @@ func ReadSliceMmap(inputFile string) string {
 func ReadSlice(input io.Reader) string {
 	stations := make(map[string]*Station, 2048)
 
-	br := bufio.NewReaderSize(input, 1024*1024)
+	br := bufio.NewReaderSize(input, 2048*1024)
 
 	for {
 		line, err := br.ReadSlice('\n')
@@ -43,6 +43,7 @@ func ReadSlice(input io.Reader) string {
 
 		m, err := strconv.ParseFloat(value, 64)
 		if err != nil {
+			log.Printf("invalid line: %s", string(line))
 			log.Fatal(err)
 		}
 

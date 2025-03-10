@@ -216,11 +216,11 @@ func fnv1aRange(bs []byte) uint32 {
 
 func (t *StringHashTable) getOrCreate(name string) *Station {
 	// h := stringHash(name) % BUCKETS
-	// h := stringHash(name) & (t.nbuckets - 1)
+	h := stringHash(name) & uint32((t.nbuckets - 1))
 	// h := xxhash.Sum64String(name) & (t.nbuckets - 1)
-	t.hasher.Reset()
-	t.hasher.Write([]byte(name))
-	h := t.hasher.Sum64() & (t.nbuckets - 1)
+	// t.hasher.Reset()
+	// t.hasher.Write([]byte(name))
+	// h := t.hasher.Sum64() & (t.nbuckets - 1)
 
 	for e := t.buckets[h]; e != nil; e = e.next {
 		if e.name == name {
