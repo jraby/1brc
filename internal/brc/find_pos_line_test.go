@@ -104,7 +104,7 @@ func indexByteUnsafe(b []byte, needle byte) int {
 
 func indexBytePointerUnsafe4Bytes(bp unsafe.Pointer, length int, needle byte, broadcastedNeedle uint32) int {
 	var i int
-	for ; i < length-3; i += 3 {
+	for ; i+3 < length; i += 3 {
 		xored := *(*uint32)(unsafe.Add(bp, i)) ^ broadcastedNeedle
 		mask := (xored - 0x01010101) & ^xored & 0x80808080
 		if mask != 0 {
