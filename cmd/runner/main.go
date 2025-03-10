@@ -37,6 +37,8 @@ func main() {
 		fmt.Println(brc.Baseline(f))
 	case "reduced-allocs":
 		fmt.Println(brc.ReducedAllocs(f))
+	case "reduced-allocs-buffered":
+		fmt.Println(brc.ReducedAllocsBufferedReader(f))
 	case "patate":
 		fmt.Println(brc.PatateBufferedReader(f))
 	case "readslice":

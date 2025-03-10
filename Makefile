@@ -6,8 +6,10 @@ CHANNEL_CAP?=$(NPROC)
 CHUNKSIZE?=$(shell echo $$((2048*1024)))
 run: build
 	perf stat -e $(PERF_STAT_E) bin/fastbrc -f data/1b.txt -n $(NPROC) -channel-cap $(CHANNEL_CAP) -chunksize $(CHUNKSIZE)
+
+BENCH_PATTERN?=10m
 bench:
-	go test -run XXX -bench 10m -benchtime 1s ./...
+	go test -run XXX -bench $(BENCH_PATTERN) -benchtime 1s ./...
 
 bin/fastbrc:  *.go internal/fastbrc/*.go | bin
 	go build -o bin/fastbrc ./main.go
