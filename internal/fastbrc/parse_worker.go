@@ -69,6 +69,9 @@ func byteHashBCE(b []byte) uint32 {
 	return hash
 }
 
+// like indexbyte, but works on 8 bytes at a time
+// needle and broadcastedNeedle are needed to avoid calculating it everytime,
+// and busting the inlining budget
 func indexBytePointerUnsafe8Bytes(bp unsafe.Pointer, length int, needle byte, broadcastedNeedle uint64) int {
 	var i int
 	for ; i+7 < length; i += 8 {
@@ -89,8 +92,6 @@ func indexBytePointerUnsafe8Bytes(bp unsafe.Pointer, length int, needle byte, br
 // ParseFixedPoint16Unsafe parses input as a 1 decimal place float and
 // represents it as an int16
 // No check for overflow or invalid values.
-
-// ////go:noinline
 func ParseFixedPoint16Unsafe(input []byte) int16 {
 	bp := unsafe.Pointer(unsafe.SliceData(input))
 
@@ -111,6 +112,7 @@ func ParseFixedPoint16Unsafe(input []byte) int16 {
 	return value
 }
 
+// Same as ParseFixedPoint16Unsafe, but works with unsafe.Pointer and length.
 func ParseFixedPoint16UnsafePtr(bp unsafe.Pointer, length int) int16 {
 	i := length - 1
 	value := int16(*(*byte)(unsafe.Add(bp, i)) - '0')
@@ -135,7 +137,6 @@ type ChunkGetter interface {
 }
 
 func ParseWorker(chunker ChunkGetter) []StationInt16 {
-	// stationTable := make([]StationInt16, 65535)
 	stationTable := make([]StationInt16, 65537)
 	stationTablePtr := unsafe.Pointer(unsafe.SliceData(stationTable))
 	stationTableLen := uint64(len(stationTable))
@@ -158,21 +159,16 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 		chunklen := len(*chunk)
 		chunkp := unsafe.Pointer(unsafe.SliceData(*chunk))
 		for startpos < chunklen {
-			// delim := bytes.IndexByte(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), chunklen-startpos-1), ';')
 			delim := indexBytePointerUnsafe8Bytes(unsafe.Add(chunkp, startpos), chunklen-startpos, ';', broadcastedDelim)
 			//if delim < 0 {
 			//	log.Fatal("garbage input, ';' not found")
 			//}
-
-			// h := byteHashBCE((*chunkPtr)[startpos:startpos+delim]) % uint32(stationTableLen)
-			// h := xxh3.Hash((*chunk)[startpos:startpos+delim]) % stationTableLen
 
 			h := xxh3.Hash(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), delim)) % stationTableLen
 
 			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint64(stationSize)))
 			if station.N == 0 {
 				station.Name = bytes.Clone(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), delim))
-				// station.Name = bytes.Clone((*chunk)[startpos : startpos+delim])
 			}
 			// enable to check if there are collisions :-)
 			//if !bytes.Equal(station.Name, (*chunk)[startpos:startpos+delim]) {
@@ -181,17 +177,12 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 
 			startpos += delim + 1
 
-			// nl := bytes.IndexByte((*chunk)[startpos:], '\n')
 			nl := indexBytePointerUnsafe8Bytes(unsafe.Add(chunkp, startpos), chunklen-startpos, '\n', broadcastedNl)
 			//if nl < 0 {
 			//	log.Fatal("garbage input, '\\n' not found")
 			//}
-			//value := (*chunk)[startpos : startpos+nl]
 
 			m := ParseFixedPoint16UnsafePtr(unsafe.Add(chunkp, startpos), nl)
-			//if err != nil {
-			//	log.Fatal(err)
-			//}
 
 			station.NewMeasurement(m)
 			startpos += nl + 1
