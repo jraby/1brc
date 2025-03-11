@@ -171,7 +171,8 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 
 			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint64(stationSize)))
 			if station.N == 0 {
-				station.Name = bytes.Clone((*chunk)[startpos : startpos+delim])
+				station.Name = bytes.Clone(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), delim))
+				// station.Name = bytes.Clone((*chunk)[startpos : startpos+delim])
 			}
 			// enable to check if there are collisions :-)
 			//if !bytes.Equal(station.Name, (*chunk)[startpos:startpos+delim]) {
