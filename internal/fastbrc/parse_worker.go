@@ -128,7 +128,7 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 	}
 
 	var broadcastedDelim uint64 = 0x3b3b3b3b3b3b3b3b
-	// var broadcastedNl uint64 = 0x0a0a0a0a0a0a0a0a
+	var broadcastedNl uint64 = 0x0a0a0a0a0a0a0a0a
 
 	for {
 		chunk := chunker.NextChunk()
@@ -147,34 +147,34 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 			//}
 
 			// h := byteHashBCE((*chunkPtr)[startpos:startpos+delim]) % uint32(stationTableLen)
-			h := xxh3.Hash((*chunk)[startpos:startpos+delim]) % stationTableLen
-			// h := xxh3.Hash((unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), delim-1))) % stationTableLen //(*chunk)[startpos : startpos+delim])) % uint64(stationTableLen)
+			// h := xxh3.Hashh(*chunk)[startpos:startpos+delim]) % stationTableLen
+			h := xxh3.Hash(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), delim)) % stationTableLen
 
 			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint64(stationSize)))
 			if station.N == 0 {
 				station.Name = bytes.Clone((*chunk)[startpos : startpos+delim])
 			}
 			// enable to check if there are collisions :-)
-			//if !bytes.Equal(station.Name, (*chunkPtr)[startpos:startpos+delim]) {
+			//if !bytes.Equal(station.Name, (*chunk)[startpos:startpos+delim]) {
 			//	panic("woupelai")
 			//}
 
 			startpos += delim + 1
 
-			nl := bytes.IndexByte((*chunk)[startpos:], '\n')
-			//nl := indexBytePointerUnsafe8Bytes(unsafe.Add(chunkp, startpos), chunklen-startpos, '\n', broadcastedNl)
+			// nl := bytes.IndexByte((*chunk)[startpos:], '\n')
+			nl := indexBytePointerUnsafe8Bytes(unsafe.Add(chunkp, startpos), chunklen-startpos, '\n', broadcastedNl)
 			//if nl < 0 {
 			//	log.Fatal("garbage input, '\\n' not found")
 			//}
-			value := (*chunk)[startpos : startpos+nl]
-			startpos += nl + 1
+			//value := (*chunk)[startpos : startpos+nl]
 
-			m := ParseFixedPoint16Unsafe(value)
+			m := ParseFixedPoint16Unsafe(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), nl))
 			//if err != nil {
 			//	log.Fatal(err)
 			//}
 
 			station.NewMeasurement(m)
+			startpos += nl + 1
 		}
 
 		chunker.ReleaseChunk(chunk)
