@@ -121,7 +121,7 @@ func indexBytePointerUnsafe4Bytes(bp unsafe.Pointer, length int, needle byte, br
 
 func indexBytePointerUnsafe8Bytes(bp unsafe.Pointer, length int, needle byte, broadcastedNeedle uint64) int {
 	var i int
-	for ; i < length-3; i += 3 {
+	for ; i+7 < length; i += 8 {
 		xored := *(*uint64)(unsafe.Add(bp, i)) ^ broadcastedNeedle
 		mask := (xored - 0x0101010101010101) & ^xored & 0x8080808080808080
 		if mask != 0 {
@@ -205,12 +205,12 @@ func parseChunkPatate8Bytes(b []byte) {
 	broadcastedDelim := 0x3b3b3b3b3b3b3b3b
 	broadcastedNl := 0x0a0a0a0a0a0a0a0a
 	for startpos < lenb {
-		delim := indexBytePointerUnsafe4Bytes(unsafe.Add(bp, startpos), lenb-startpos, ';', uint32(broadcastedDelim))
+		delim := indexBytePointerUnsafe8Bytes(unsafe.Add(bp, startpos), lenb-startpos, ';', uint64(broadcastedDelim))
 		//if delim < 0 {
 		//	panic("; not found")
 		//}
 		startpos += delim + 1
-		nl := indexBytePointerUnsafe4Bytes(unsafe.Add(bp, startpos), lenb-startpos, '\n', uint32(broadcastedNl))
+		nl := indexBytePointerUnsafe8Bytes(unsafe.Add(bp, startpos), lenb-startpos, '\n', uint64(broadcastedNl))
 		//if nl < 0 {
 		//	panic("\\n not found")
 		//}
