@@ -46,7 +46,6 @@ The stations must be listed in alphabetical order.
 
 ---
 
-
 I have a bit of free time right now, so I thought it would be fun to spend *some* time experimenting and brushing up on skills I hadn't used in a while (or ever really).
 
 I really enjoyed the process of optimization:
@@ -58,7 +57,7 @@ I really enjoyed the process of optimization:
 I ended up with a dozen implementations and quite a few failed experiments and red herrings.
 Overall it was quite interesting.
 
-In the end, I stopped when the program could run in 1.3s on a ryzen 9 7900 (24 cores) machine.
+In the end, I stopped when the program could run in 1.19s on a ryzen 9 7900 (24 cores) machine.
 On that machine, the #1 entry in the leaderboard runs in 0.488ms.
 
 # Single thread baseline
@@ -434,6 +433,24 @@ In any case, xxh3 is still faster, so I was happy to drop that code.
 
 Changing from fnv to xxh3 brought the time down from 1.39s to 1.30s on the ryzen.
 
+# Working with unsafe.Add in main loop
+
+When looking at the assembly of the main loop (`ParseWorker` func), I noticed there was quite a few conditional jump to the `panicslice` family of functions.
+So I went and changed all slice access to use `unsafe.Add` to remove those bound checks.
+
+Along the way I changed `ParseFixedPoint16Unsafe` to work with an `unsafe.Pointer` and a length, instead of going through a slice,
+and with the help of chatgpt, I implemented `indexBytePointerUnsafe8Bytes`, a function that works like `IndexByte`, but it iterates through its input 8 bytes at a time.
+
+Its signatures a bit funky: ` func indexBytePointerUnsafe8Bytes(bp unsafe.Pointer, length int, needle byte, broadcastedNeedle uint64) int` 
+The pointer and the length are self explanatory, the needle is the byte the function will be looking for, and `broadcastedNeedle` is a `uint64` used for comparison.
+
+It is not calculated from `needle` because it would waste cycles at every call, and also because calculating it inside the function busts the compiler's inlining budget.
+So, to call it, `ParseWorker` has to pass in the required value (`0x3b3b3b3b3b3b3b3b` for `;` and `0x0a0a0a0a0a0a0a0a` for `\n`).
+
+With these changes, the time goes down from 1.30s to 1.19s on the ryzen.
+
+The only call that is not inlined is the call to `xxh3.hashAny`, which is a bit unfortunate as it might have brought the timing close to 1s.
+
 # faster bytes.Equal
 
 While experimenting with accessing multiple bytes at a time for comparison, I ended up writing `fastbyteequal` (see [internal/brc/station_find_test.go]) which compares 2 byte slices for equality 4 bytes at a time and doing the remainder one by one.
@@ -444,14 +461,14 @@ I didn't end up using that code, since there was no collision in the bigarray wi
 
 # Conclusion
 
-In the end, the program takes 1.30s on a ryzen 9 7900 (24 core), while the baseline implementation without concurrency took 88s on the same machine.
+In the end, the program takes 1.19s on a ryzen 9 7900 (24 core), while the baseline implementation without concurrency took 88s on the same machine.
 The profiling show:
-- 30% `IndexByte`
-- 29% in ParseWorker
-- 23% `xxh3`
-- 10% `ParseFixedPoint16Unsafe`
-- 05% new measurement
-- 03% file reading
+- 31% in ParseWorker
+- 26% `xxh3`
+- 23% `indexBytePointerUnsafe8Bytes`
+- 11% `ParseFixedPoint16UnsafePtr`
+- 04% new measurement
+- 05% file reading
 
 The number one entry on the leaderboard runs in 0.448ms on that machine, so clearly there's room for improvement,
 but I think that's enough for now.
@@ -460,7 +477,9 @@ It was very interesting to explore the multiple sides of this problem for a few 
 It is quite simple on the surface, but there's a lot of depth to it!
 
 I think there are some tweaks to squeeze more performance out of this:
-- remove all bound checking from the ParseWorker loop
+- import the xxh3 code and inline it in the loop manually to reduce the function call overhead.
+  It is quite unfortunate that it cannot be done automatically.
+  Given how many times it is called, it might reduce the overall time by another 100ms.
 - conversion from string to fixed precision int without any branches, using bit twiddling (like they did in the #1 entry)
 - change chunker to use slices from mmap instead of copying the data
   - this is useless at the moment since the rest the of program is faster than the file reading part (1.3s vs ~0.5s), but it is probably the only way to go under 500ms like the #1 entry does.
@@ -470,10 +489,10 @@ In the end, I guess my key take aways are:
   I might start with xxh3 now if the hash loop is really hot, since the go implementation seems pretty good.
 - in really hot loops, bounds checking matters and I haven't found a good way to eliminate them without resorting to `unsafe`, which is a bit unfortunate.
   But really, this is only needed in the hottest loops.
-  Looking at the assembly with `go tool objdump` is a good reflex to have to such loops.
+  Looking at the assembly with `go tool objdump` is a good reflex to have to inspect such loops.
 - Inlining can be key to performance.
   One can verify why a function is not inlined by passing `-gcflags="-m=2"` to `go test` or `go build`.
-  Fiddling with the functions to their complexity budget fits under the limit (80 as of go 1.24) is tricky.
+  Fiddling with the functions to get their complexity budget to fit under the limit (80 as of go 1.24) is tricky.
 - set `/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor` to `performance` when testing for more uniform results.
 - when working with a 13gb dataset, make sure firefox is not taking 20gb of ram on a 32gb machine or performance is going to be suboptimal.
   (aka monitor pagecache hit ratios with [cachestat](https://github.com/brendangregg/perf-tools/blob/master/fs/cachestat), or io with iostat)
