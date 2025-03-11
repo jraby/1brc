@@ -1,6 +1,16 @@
 The following is a summary of a few hacking sessions trying to write a program with decent performance to complete the [1 billion rows challenge](https://github.com/gunnarmorling/1brc).
 
-The idea is to take an input file that has 1 billion rows (with a total size of ~13gb) in the format:
+The final code can be found in the [fastbrc](./internal/fastbrc/) module.
+To run it:
+1. generate the measurement file as per https://github.com/gunnarmorling/1brc#running-the-challenge) and store it as `data/1b.txt`
+1. run `make run`
+
+---
+
+The idea is to write a program that tracks the minimum, maximum and average value for each unique "station" in the input file and write the result to `stdout`.
+
+The input file has 1 billion rows and is about 13gb in size.
+The format is:
 ```
 <stationname>;<measurement>\n
 ```
@@ -10,7 +20,7 @@ and `<measurement>` is a string representing a float value with a single fractio
 
 For example:
 ```
-Montreal;-99.9\n
+Montreal;-99.9
 Hamburg;12.0
 Bulawayo;8.9
 Palembang;38.8
@@ -23,17 +33,21 @@ Conakry;31.2
 Istanbul;23.0
 ```
 
-The minimum measurement is `-999.9` and the maximum is `999.9`.
-
-The goal is to write a program that tracks the minimum, maximum and average value for each station and outputs it in a specific format:
-sorted alphabetically by station name, and the result values per station in the format `<min>/<mean>/<max>`, rounded to one fractional digit.
+The minimum measurement is `-99.9` and the maximum is `99.9`.
 
 The program must do its works at runtime, it is not permitted to bake results or tables into the program.
+
+The output format is:
+```
+{ <station>=<min>/<avg>/<max>, ... }
+```
+The stations must be listed in alphabetical order.
+
 
 ---
 
 
-I have a bit of free time right now, so I thought it would be fun to spend *some* of last week experimenting and brushing up on skills I hadn't used in a while (or ever really).
+I have a bit of free time right now, so I thought it would be fun to spend *some* time experimenting and brushing up on skills I hadn't used in a while (or ever really).
 
 I really enjoyed the process of optimization:
 - Run a benchmark on a subset of the dataset (10m rows) and record a cpu and memory profile.
@@ -41,7 +55,7 @@ I really enjoyed the process of optimization:
 - choose an area to explore
 - hack on it, profile, repeat
 
-I ended up with a dozen implementation and quite a few failed experiments and red herrings.
+I ended up with a dozen implementations and quite a few failed experiments and red herrings.
 Overall it was quite interesting.
 
 In the end, I stopped when the program could run in 1.3s on a ryzen 9 7900 (24 cores) machine.
@@ -58,6 +72,8 @@ A  straightforward single thread implementation using:
 Runs through the 13gb file in: (`make runner.baseline`)
 - ~94s on a i7-7700
 - ~88s on a ryzen 9 7900
+
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/baseline.go#L140-L177).
 
 This approach is not very efficient:
 - bufio.Scanner uses a small buffer (4k) to read the input file, leading to a big syscall overhead
@@ -101,6 +117,8 @@ This takes the total time down to: (`make runner.reduced-allocs`)
 - 40s on i7-7700
 - 38s on ryzen 9 7900
 
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/reduced_allocs.go#L28-L72).
+
 The time is now split like this:
 - 31% `strconv.ParseFloat`
 - 30% map access
@@ -118,6 +136,8 @@ It was terrible, adding a `if` statement in the middle of that loop along with a
 Eventually I tried using `bufio.(*Reader).ReadSlice('\n')` to find end of lines, instead of `bufio.ScanLines`: (`make runner.readslice`)
 - 36.5s on i7-7700  (for a still unknown reason, this measurement went up to 57s during writing of this document, so I'll only be using the ryzen for reference)
 - 35.5s on ryzen 9 7900
+
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L23-L76).
 
 At this point, the processing is now split like this:
 - 38% `strconv.ParseFloat`
@@ -139,6 +159,8 @@ See `stringHash` in 1brc/internal/brc/hash.go.
 
 It ended up taking ~34s on ryzen 9 7900. (`make runner.readslicestringhash`)
 
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L23-L76).
+
 The map access went down from 33% of runtime to 27%,
 but it introduced a bunch of allocations and I wasn't satisfied with it.
 
@@ -158,6 +180,8 @@ it checks for over / under flow, it aborts if there's more than one `.` in the i
 
 This runs the challenge in 27s on the ryzen 9 7900. (`make runner.readslicefixed16`)
 
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L183-L245).
+
 Float parsing went from 38% to 17%.
 We're getting somewhere.
 
@@ -174,6 +198,8 @@ I also started scanning from the end of the slice.
 See [ParseFixedPoint16Unsafe](./internal/brc/parse_fixed_point.go).
 
 This runs in 24s on the ryzen. (`make runner.readslicefixed16unsafe` -- weird name, it isn't using unsafe, but it is not safe for all input)
+
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L247-L302).
 
 Profiling shows:
 - 50% map access
@@ -196,6 +222,8 @@ Then spin up N goroutines that would parse through each section in concurrently.
 Once the goroutines are done, merge the results and print the output.
 
 This takes 2.23s on the ryzen 9 7900 with 24 cores. (`make runner.parallelreadslicefixed16unsafe`)
+
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/parallel.go#L16-L119).
 
 Profiling shows:
 - 47% map access
@@ -255,6 +283,8 @@ When running benchmarks, I would simply remove the check.
 
 This approach takes 1.8s on the ryzen (24 cores) (`runner.parallelreadslicefixed16unsafeopen` -- another weird name...) 
 
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/parallel.go#L255-L324).
+
 Profling shows:
 - 25% `byteHash`
 - 25% `ReadSlice('\n')`
@@ -273,6 +303,8 @@ I tried using `ReadSlice(';')` followed by `ReadSlice('\n')` while keeping the r
 It turns out that `ReadSlice` does a fair bit of memory copying to "slide" the data within its internal buffer when refilling it.
 
 This approach took 2.25s on ryzen.
+
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/parallel.go#L445-L488).
 
 
 ### Chunker
@@ -293,6 +325,10 @@ Each worker now reads its input from the chunker's channel:
   - loop until end of chunk
 
 This approach takes 1.62s on the ryzen. (`make runner.ParallelChunkChannelFixedInt16UnsafeOpenAddr`)
+
+The code:
+- [chunker](https://github.com/jraby/1brc/blob/main/internal/fastbrc/chunker.go)
+- [worker](https://github.com/jraby/1brc/blob/main/internal/fastbrc/parse_worker.go)
 
 Profiling:
 - 29% `byteHash`
@@ -326,7 +362,7 @@ What I saw was a bit surprising, there were 5 bound checks in the function, one 
 I tried to add some compiler hints to let it know that *this is fine™*, but to no avail.
 
 That's when I started to get dirty :)
-The result is [`ByteHashBCE`](./internal/fastbrc/parse_worker.go), where `unsafe.Pointer` and `unsafe.Add` are used to access the underlying data of the byte slice.
+The result is [`ByteHashBCE`](https://github.com/jraby/1brc/blob/main/internal/fastbrc/parse_worker.go#L37-L67), where `unsafe.Pointer` and `unsafe.Add` are used to access the underlying data of the byte slice.
 
 According to my notes, this made the fnv hash go 10% faster both on i7-7700 and the ryzen.
 
