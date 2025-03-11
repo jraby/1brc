@@ -2,6 +2,7 @@ package fastbrc
 
 import (
 	"bytes"
+	"math/bits"
 	"unsafe"
 
 	"github.com/zeebo/xxh3"
@@ -68,15 +69,52 @@ func byteHashBCE(b []byte) uint32 {
 	return hash
 }
 
+// like indexbyte, but works on 8 bytes at a time
+// needle and broadcastedNeedle are needed to avoid calculating it everytime,
+// and busting the inlining budget
+func indexBytePointerUnsafe8Bytes(bp unsafe.Pointer, length int, needle byte, broadcastedNeedle uint64) int {
+	var i int
+	for ; i+7 < length; i += 8 {
+		xored := *(*uint64)(unsafe.Add(bp, i)) ^ broadcastedNeedle
+		mask := (xored - 0x0101010101010101) & ^xored & 0x8080808080808080
+		if mask != 0 {
+			return bits.TrailingZeros64(mask)>>3 + i
+		}
+	}
+	for ; i < length; i++ {
+		if *(*byte)(unsafe.Add(bp, i)) == needle {
+			return i
+		}
+	}
+	return -1
+}
+
 // ParseFixedPoint16Unsafe parses input as a 1 decimal place float and
 // represents it as an int16
 // No check for overflow or invalid values.
-
-// ////go:noinline
 func ParseFixedPoint16Unsafe(input []byte) int16 {
 	bp := unsafe.Pointer(unsafe.SliceData(input))
 
 	i := len(input) - 1
+	value := int16(*(*byte)(unsafe.Add(bp, i)) - '0')
+	i -= 2 // skip last num + dot
+	var mult int16 = 10
+
+	for ; i > 0; i-- {
+		value += mult * int16(*(*byte)(unsafe.Add(bp, i))-'0')
+		mult *= 10
+	}
+	if *(*byte)(bp) == '-' {
+		value = -value
+	} else {
+		value += mult * int16(*(*byte)(bp)-'0')
+	}
+	return value
+}
+
+// Same as ParseFixedPoint16Unsafe, but works with unsafe.Pointer and length.
+func ParseFixedPoint16UnsafePtr(bp unsafe.Pointer, length int) int16 {
+	i := length - 1
 	value := int16(*(*byte)(unsafe.Add(bp, i)) - '0')
 	i -= 2 // skip last num + dot
 	var mult int16 = 10
@@ -99,60 +137,58 @@ type ChunkGetter interface {
 }
 
 func ParseWorker(chunker ChunkGetter) []StationInt16 {
-	// stationTable := make([]StationInt16, 65535)
 	stationTable := make([]StationInt16, 65537)
 	stationTablePtr := unsafe.Pointer(unsafe.SliceData(stationTable))
-	stationTableLen := len(stationTable)
+	stationTableLen := uint64(len(stationTable))
 	stationSize := unsafe.Sizeof(StationInt16{})
 	for i := range stationTable {
 		stationTable[i].Min = 32767
 		stationTable[i].Max = -32767
 	}
 
+	var broadcastedDelim uint64 = 0x3b3b3b3b3b3b3b3b
+	var broadcastedNl uint64 = 0x0a0a0a0a0a0a0a0a
+
 	for {
-		chunkPtr := chunker.NextChunk()
-		if chunkPtr == nil {
+		chunk := chunker.NextChunk()
+		if chunk == nil {
 			break
 		}
 
 		startpos := 0
-		chunkmaxpos := len(*chunkPtr) - 1
-		for startpos <= chunkmaxpos {
-			delim := bytes.IndexByte((*chunkPtr)[startpos:chunkmaxpos], ';')
+		chunklen := len(*chunk)
+		chunkp := unsafe.Pointer(unsafe.SliceData(*chunk))
+		for startpos < chunklen {
+			delim := indexBytePointerUnsafe8Bytes(unsafe.Add(chunkp, startpos), chunklen-startpos, ';', broadcastedDelim)
 			//if delim < 0 {
 			//	log.Fatal("garbage input, ';' not found")
 			//}
 
-			// h := byteHashBCE((*chunkPtr)[startpos:startpos+delim]) % uint32(stationTableLen)
-			h := xxh3.Hash(((*chunkPtr)[startpos : startpos+delim])) % uint64(stationTableLen)
+			h := xxh3.Hash(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), delim)) % stationTableLen
 
 			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint64(stationSize)))
 			if station.N == 0 {
-				station.Name = bytes.Clone((*chunkPtr)[startpos : startpos+delim])
+				station.Name = bytes.Clone(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), delim))
 			}
 			// enable to check if there are collisions :-)
-			//if !bytes.Equal(station.Name, (*chunkPtr)[startpos:startpos+delim]) {
+			//if !bytes.Equal(station.Name, (*chunk)[startpos:startpos+delim]) {
 			//	panic("woupelai")
 			//}
 
 			startpos += delim + 1
 
-			nl := bytes.IndexByte((*chunkPtr)[startpos:], '\n')
+			nl := indexBytePointerUnsafe8Bytes(unsafe.Add(chunkp, startpos), chunklen-startpos, '\n', broadcastedNl)
 			//if nl < 0 {
 			//	log.Fatal("garbage input, '\\n' not found")
 			//}
-			value := (*chunkPtr)[startpos : startpos+nl]
-			startpos += nl + 1
 
-			m := ParseFixedPoint16Unsafe(value)
-			//if err != nil {
-			//	log.Fatal(err)
-			//}
+			m := ParseFixedPoint16UnsafePtr(unsafe.Add(chunkp, startpos), nl)
 
 			station.NewMeasurement(m)
+			startpos += nl + 1
 		}
 
-		chunker.ReleaseChunk(chunkPtr)
+		chunker.ReleaseChunk(chunk)
 	}
 
 	return stationTable
