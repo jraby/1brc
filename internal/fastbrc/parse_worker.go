@@ -111,6 +111,24 @@ func ParseFixedPoint16Unsafe(input []byte) int16 {
 	return value
 }
 
+func ParseFixedPoint16UnsafePtr(bp unsafe.Pointer, length int) int16 {
+	i := length - 1
+	value := int16(*(*byte)(unsafe.Add(bp, i)) - '0')
+	i -= 2 // skip last num + dot
+	var mult int16 = 10
+
+	for ; i > 0; i-- {
+		value += mult * int16(*(*byte)(unsafe.Add(bp, i))-'0')
+		mult *= 10
+	}
+	if *(*byte)(bp) == '-' {
+		value = -value
+	} else {
+		value += mult * int16(*(*byte)(bp)-'0')
+	}
+	return value
+}
+
 type ChunkGetter interface {
 	NextChunk() *[]byte
 	ReleaseChunk(*[]byte)
@@ -147,7 +165,8 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 			//}
 
 			// h := byteHashBCE((*chunkPtr)[startpos:startpos+delim]) % uint32(stationTableLen)
-			// h := xxh3.Hashh(*chunk)[startpos:startpos+delim]) % stationTableLen
+			// h := xxh3.Hash((*chunk)[startpos:startpos+delim]) % stationTableLen
+
 			h := xxh3.Hash(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), delim)) % stationTableLen
 
 			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint64(stationSize)))
@@ -168,7 +187,7 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 			//}
 			//value := (*chunk)[startpos : startpos+nl]
 
-			m := ParseFixedPoint16Unsafe(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), nl))
+			m := ParseFixedPoint16UnsafePtr(unsafe.Add(chunkp, startpos), nl)
 			//if err != nil {
 			//	log.Fatal(err)
 			//}
