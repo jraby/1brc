@@ -3,6 +3,8 @@ package fastbrc
 import (
 	"bytes"
 	"unsafe"
+
+	"github.com/zeebo/xxh3"
 )
 
 // byteHash returns the fnv1a hash of b
@@ -116,19 +118,15 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 		startpos := 0
 		chunkmaxpos := len(*chunkPtr) - 1
 		for startpos <= chunkmaxpos {
-			// patate := unsafe.Slice((*byte)(unsafe.Add(chunkData, startpos)), chunkmaxpos-startpos)
 			delim := bytes.IndexByte((*chunkPtr)[startpos:chunkmaxpos], ';')
-			//delim := bytes.IndexByte(patate, ';')
 			//if delim < 0 {
 			//	log.Fatal("garbage input, ';' not found")
 			//}
 
-			// name := (*chunkPtr)[startpos : startpos+delim]
+			// h := byteHashBCE((*chunkPtr)[startpos:startpos+delim]) % uint32(stationTableLen)
+			h := xxh3.Hash(((*chunkPtr)[startpos : startpos+delim])) % uint64(stationTableLen)
 
-			h := byteHashBCE((*chunkPtr)[startpos:startpos+delim]) % uint32(stationTableLen)
-			// h := xxh3.Hash(((*chunkPtr)[startpos : startpos+delim])) % uint64(stationTableLen)
-
-			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint32(stationSize)))
+			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint64(stationSize)))
 			if station.N == 0 {
 				station.Name = bytes.Clone((*chunkPtr)[startpos : startpos+delim])
 			}
