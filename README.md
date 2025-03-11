@@ -69,11 +69,11 @@ A  straightforward single thread implementation using:
 - `strings.Split` to split each line on `;`
 - `strconv.ParseFloat` to convert the measurement to float
 
-Runs through the 13gb file in: (`make runner.baseline`)
+Runs through the 13gb file in:
 - ~94s on a i7-7700
 - ~88s on a ryzen 9 7900
 
-The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/baseline.go#L140-L177).
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/baseline.go#L140-L177), run with  `make runner.baseline`.
 
 This approach is not very efficient:
 - bufio.Scanner uses a small buffer (4k) to read the input file, leading to a big syscall overhead
@@ -113,11 +113,11 @@ first attempt:
 - use `bytes.IndexByte` to locate the `;`
 - use `unsafe.String` and `unsafe.SliceData` to create a temporaty string for the measurement without allocating, and pass that to `strconv.ParseFloat`
 
-This takes the total time down to: (`make runner.reduced-allocs`)
+This takes the total time down to: 
 - 40s on i7-7700
 - 38s on ryzen 9 7900
 
-The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/reduced_allocs.go#L28-L72).
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/reduced_allocs.go#L28-L72), run with `make runner.reduced-allocs`.
 
 The time is now split like this:
 - 31% `strconv.ParseFloat`
@@ -133,11 +133,11 @@ Using `bufio.NewReaderSize(reader, 1024*1024)` to read the input file in chunks 
 After that I made a failed attempts at trying to read every byte only once, by using `IndexByte(b, delim)`, where `delim` was either `;` or `\n` depending on the state of the parser.
 It was terrible, adding a `if` statement in the middle of that loop along with a variable, destroyed the performance, it was something like twice as slow.
 
-Eventually I tried using `bufio.(*Reader).ReadSlice('\n')` to find end of lines, instead of `bufio.ScanLines`: (`make runner.readslice`)
+Eventually I tried using `bufio.(*Reader).ReadSlice('\n')` to find end of lines, instead of `bufio.ScanLines`:
 - 36.5s on i7-7700  (for a still unknown reason, this measurement went up to 57s during writing of this document, so I'll only be using the ryzen for reference)
 - 35.5s on ryzen 9 7900
 
-The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L23-L76).
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L23-L76), run with `make runner.readslice`.
 
 At this point, the processing is now split like this:
 - 38% `strconv.ParseFloat`
@@ -157,9 +157,9 @@ I would come back to these hashing algorithm later, but at this point I tested, 
 
 See `stringHash` in 1brc/internal/brc/hash.go.
 
-It ended up taking ~34s on ryzen 9 7900. (`make runner.readslicestringhash`)
+It ended up taking ~34s on ryzen 9 7900.
 
-The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L23-L76).
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L23-L76), run with `make runner.readslicestringhash`.
 
 The map access went down from 33% of runtime to 27%,
 but it introduced a bunch of allocations and I wasn't satisfied with it.
@@ -178,9 +178,9 @@ It scans the slice forward, checking for a leading `-` for negative numbers,
 it stop parsing after the first decimal is read,
 it checks for over / under flow, it aborts if there's more than one `.` in the input and aborts if there's an invalid character in the input.
 
-This runs the challenge in 27s on the ryzen 9 7900. (`make runner.readslicefixed16`)
+This runs the challenge in 27s on the ryzen 9 7900.
 
-The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L183-L245).
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L183-L245), run with `make runner.readslicefixed16`.
 
 Float parsing went from 38% to 17%.
 We're getting somewhere.
@@ -197,9 +197,9 @@ I removed all checks for invalid stuff, keeping only the logic for `.` skipping 
 I also started scanning from the end of the slice.
 See [ParseFixedPoint16Unsafe](./internal/brc/parse_fixed_point.go).
 
-This runs in 24s on the ryzen. (`make runner.readslicefixed16unsafe` -- weird name, it isn't using unsafe, but it is not safe for all input)
+This runs in 24s on the ryzen.
 
-The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L247-L302).
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L247-L302), run with `make runner.readslicefixed16unsafe` (*weird name, it isn't using unsafe, but it is not safe for all input*)
 
 Profiling shows:
 - 50% map access
@@ -221,9 +221,9 @@ To parallelize the workload, I started by:
 Then spin up N goroutines that would parse through each section in concurrently.
 Once the goroutines are done, merge the results and print the output.
 
-This takes 2.23s on the ryzen 9 7900 with 24 cores. (`make runner.parallelreadslicefixed16unsafe`)
+This takes 2.23s on the ryzen 9 7900 with 24 cores.
 
-The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/parallel.go#L16-L119).
+The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/parallel.go#L16-L119), run with `make runner.parallelreadslicefixed16unsafe`.
 
 Profiling shows:
 - 47% map access
@@ -324,11 +324,13 @@ Each worker now reads its input from the chunker's channel:
   - adjust `startpos`
   - loop until end of chunk
 
-This approach takes 1.62s on the ryzen. (`make runner.ParallelChunkChannelFixedInt16UnsafeOpenAddr`)
+This approach takes 1.62s on the ryzen.
 
 The code:
 - [chunker](https://github.com/jraby/1brc/blob/main/internal/fastbrc/chunker.go)
 - [worker](https://github.com/jraby/1brc/blob/main/internal/fastbrc/parse_worker.go)
+
+Run with `make runner.ParallelChunkChannelFixedInt16UnsafeOpenAddr`
 
 Profiling:
 - 29% `byteHash`
@@ -377,6 +379,8 @@ Instead of looping from the back of the value, it now:
 Access to the big `StationInt16` array has also been updated to use pointer math to avoid the bound check.
 
 these 3 changes took the time from 1.62s on ryzen down to 1.39s
+
+Run with `make run`.
 
 # xxh3
 
@@ -441,6 +445,13 @@ I didn't end up using that code, since there was no collision in the bigarray wi
 # Conclusion
 
 In the end, the program takes 1.30s on a ryzen 9 7900 (24 core), while the baseline implementation without concurrency took 88s on the same machine.
+The profiling show:
+- 30% `IndexByte`
+- 29% in ParseWorker
+- 23% `xxh3`
+- 10% `ParseFixedPoint16Unsafe`
+- 05% new measurement
+- 03% file reading
 
 The number one entry on the leaderboard runs in 0.448ms on that machine, so clearly there's room for improvement,
 but I think that's enough for now.
@@ -448,7 +459,8 @@ but I think that's enough for now.
 It was very interesting to explore the multiple sides of this problem for a few hacking session.
 It is quite simple on the surface, but there's a lot of depth to it!
 
-I think there are 2 obvious performance things that I leave on the table here:
+I think there are some tweaks to squeeze more performance out of this:
+- remove all bound checking from the ParseWorker loop
 - conversion from string to fixed precision int without any branches, using bit twiddling (like they did in the #1 entry)
 - change chunker to use slices from mmap instead of copying the data
   - this is useless at the moment since the rest the of program is faster than the file reading part (1.3s vs ~0.5s), but it is probably the only way to go under 500ms like the #1 entry does.
