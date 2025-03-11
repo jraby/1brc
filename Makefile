@@ -24,7 +24,7 @@ check-runner.%: bin/runner
 	diff -u <(./output2diffable.sh ./data/10m.txt.expect) <(bin/runner -funcName $* -i data/10m.txt | ./output2diffable.sh /dev/stdin)
 
 runner.%: bin/runner
-	perf stat -e $(PERF_STAT_E) bin/runner -funcName $* -i data/1b.txt 
+	perf stat -e $(PERF_STAT_E) bin/runner -funcName $* -n $(NPROC) -i data/1b.txt 
 
 baseline: bin/baseline
 	diff <(./output2diffable.sh ./data/10m.txt.expect) <(bin/baseline -i data/10m.txt | ./output2diffable.sh /dev/stdin) || true
