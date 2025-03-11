@@ -3,8 +3,6 @@ package fastbrc
 import (
 	"bytes"
 	"unsafe"
-
-	"github.com/zeebo/xxh3"
 )
 
 // byteHash returns the fnv1a hash of b
@@ -127,10 +125,10 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 
 			// name := (*chunkPtr)[startpos : startpos+delim]
 
-			// h := byteHashBCE((*chunkPtr)[startpos:startpos+delim]) % uint32(len(stationTable))
-			h := xxh3.Hash(((*chunkPtr)[startpos : startpos+delim])) % uint64(stationTableLen)
+			h := byteHashBCE((*chunkPtr)[startpos:startpos+delim]) % uint32(stationTableLen)
+			// h := xxh3.Hash(((*chunkPtr)[startpos : startpos+delim])) % uint64(stationTableLen)
 
-			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint64(stationSize)))
+			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint32(stationSize)))
 			if station.N == 0 {
 				station.Name = bytes.Clone((*chunkPtr)[startpos : startpos+delim])
 			}
