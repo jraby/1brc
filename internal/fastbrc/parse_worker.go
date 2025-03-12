@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"math/bits"
 	"unsafe"
-
-	"github.com/zeebo/xxh3"
 )
 
 // byteHash returns the fnv1a hash of b
@@ -164,14 +162,74 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 			//	log.Fatal("garbage input, ';' not found")
 			//}
 
-			h := xxh3.Hash(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), delim)) % stationTableLen
+			// h := xxh3.Hash(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), delim))
 
-			station := (*StationInt16)(unsafe.Add(stationTablePtr, h*uint64(stationSize)))
+			// inlined hashAny from xxh3. original source: https://github.com/zeebo/xxh3
+			// see xxh3.go for full license
+			// Trimmed down to support input <32 char since the longest station is 26 byte long
+			var acc u64
+			p := unsafe.Add(chunkp, startpos)
+			l := delim
+			var h u64
+
+			switch {
+			case l <= 16:
+				switch {
+				case l > 8: // 9-16
+					inputlo := readU64(p, 0) ^ (key64_024 ^ key64_032)
+					inputhi := readU64(p, ui(l)-8) ^ (key64_040 ^ key64_048)
+					folded := mulFold64(inputlo, inputhi)
+					h = xxh3Avalanche(u64(l) + bits.ReverseBytes64(inputlo) + inputhi + folded)
+
+				case l > 3: // 4-8
+					input1 := readU32(p, 0)
+					input2 := readU32(p, ui(l)-4)
+					input64 := u64(input2) + u64(input1)<<32
+					keyed := input64 ^ (key64_008 ^ key64_016)
+					h = rrmxmx(keyed, u64(l))
+
+				case l == 3: // 3
+					c12 := u64(readU16(p, 0))
+					c3 := u64(readU8(p, 2))
+					acc = c12<<16 + c3 + 3<<8
+					acc ^= u64(key32_000 ^ key32_004)
+					h = xxhAvalancheSmall(acc)
+
+				case l > 1: // 2
+					c12 := u64(readU16(p, 0))
+					acc = c12*(1<<24+1)>>8 + 2<<8
+					acc ^= u64(key32_000 ^ key32_004)
+					h = xxhAvalancheSmall(acc)
+
+				case l == 1: // 1
+					c1 := u64(readU8(p, 0))
+					acc = c1*(1<<24+1<<16+1) + 1<<8
+					acc ^= u64(key32_000 ^ key32_004)
+					h = xxhAvalancheSmall(acc)
+
+				default: // 0
+					h = 0x2d06800538d394c2 // xxh_avalanche(key64_056 ^ key64_064)
+				}
+
+			case l < 32:
+				acc = u64(l) * prime64_1
+
+				acc += mulFold64(readU64(p, 0*8)^key64_000, readU64(p, 1*8)^key64_008)
+				acc += mulFold64(readU64(p, ui(l)-2*8)^key64_016, readU64(p, ui(l)-1*8)^key64_024)
+				h = xxh3Avalanche(acc)
+			default:
+				panic("input to baby xxh3 too long")
+			}
+
+			station := (*StationInt16)(unsafe.Add(stationTablePtr, (h%stationTableLen)*uint64(stationSize)))
 			if station.N == 0 {
 				station.Name = bytes.Clone(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), delim))
 			}
 			// enable to check if there are collisions :-)
 			//if !bytes.Equal(station.Name, (*chunk)[startpos:startpos+delim]) {
+			//	log.Printf("h: %d", h)
+			//	log.Printf("station: %s", string(station.Name))
+			//	log.Printf("name: %s", string((*chunk)[startpos:startpos+delim]))
 			//	panic("woupelai")
 			//}
 
