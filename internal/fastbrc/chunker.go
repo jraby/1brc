@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"sync"
+	"syscall"
+	"unsafe"
 )
+
+var pagesize = syscall.Getpagesize()
 
 type Chunker struct {
 	r       io.Reader
@@ -100,8 +105,38 @@ func NewByteChunker(input []byte, chCap, chunkSize int) *ByteChunker {
 	}
 }
 
+// Align a pointer address to the nearest lower page boundary
+func alignToPage(ptr uintptr, pageSize int) uintptr {
+	return ptr & ^(uintptr(pageSize - 1))
+}
+
+// ReleaseChunk calls madvise(2) with MADV_DONTNEED so the kernel can cleanup
+// this avoids the implicit munmap when the program exits which can take ~230ms
+// when the mmaped file is 13gb
 func (c *ByteChunker) ReleaseChunk(chunk *[]byte) {
-	// to satisfy interface
+	// Figure out a page aligned slice that fits the incoming chunk
+	startPtr := uintptr(unsafe.Pointer(&(*chunk)[0]))
+	endPtr := uintptr(unsafe.Pointer(&(*chunk)[len(*chunk)-1])) + 1
+
+	alignedStart := alignToPage(startPtr, pagesize)
+	alignedEnd := alignToPage(endPtr, pagesize) + uintptr(pagesize)
+
+	// Ensure we don't go out of bounds of the original mmap slice
+	if alignedStart < uintptr(unsafe.Pointer(&c.b[0])) {
+		alignedStart = uintptr(unsafe.Pointer(&c.b[0]))
+	}
+	if alignedEnd > uintptr(unsafe.Pointer(&c.b[len(c.b)-1]))+1 {
+		alignedEnd = uintptr(unsafe.Pointer(&c.b[len(c.b)-1])) + 1
+	}
+
+	// Get the aligned slice
+	alignedSlice := c.b[alignedStart-uintptr(unsafe.Pointer(&c.b[0])) : alignedEnd-uintptr(unsafe.Pointer(&c.b[0]))]
+
+	// Apply MADV_DONTNEED
+	err := syscall.Madvise(alignedSlice, syscall.MADV_DONTNEED)
+	if err != nil {
+		log.Printf("madvise failed: %v", err)
+	}
 }
 
 func (c *ByteChunker) NextChunk() *[]byte {
