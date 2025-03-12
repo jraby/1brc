@@ -57,7 +57,7 @@ I really enjoyed the process of optimization:
 I ended up with a dozen implementations and quite a few failed experiments and red herrings.
 Overall it was quite interesting.
 
-In the end, I stopped when the program could run in 1.13s on a ryzen 9 7900 (24 cores) machine.
+In the end, I stopped when the program could run in 1.07s on a ryzen 9 7900 (24 cores) machine.
 On that machine, the #1 entry in the leaderboard runs in 0.488ms.
 
 # Single thread baseline
@@ -339,7 +339,7 @@ Profiling:
 - 03% file read in chunker
 The rest is not shown in profiling, it is spent in `ParallelChunkChannelFixedInt16UnsafeOpenAddr`
 
-# refactor
+## refactor
 I thought I was mostly done, so I took a little break here and shuffled to "best" code around a little bit sincee it was starting to be a mess of tests and benchmark.
 
 The fast code is now in `internal/fastbrc` and there's a `cmd/fastbrc` command that calls it.
@@ -348,7 +348,7 @@ Unfortunately, I wasn't done, I started iterating on a single copy of the code i
 meaning I can't quickly rerun the benchmarks to see what impact each change had on the runtime.
 So the following data is taken from my notes and comments in the code.
 
-# Bound checking and unsafe slice access shenanigans
+## Bound checking and unsafe slice access shenanigans
 
 At this point I was starting to run out of ideas that didn't require drastically changing how I approached the problem.
 
@@ -381,7 +381,7 @@ these 3 changes took the time from 1.62s on ryzen down to 1.39s
 
 Run with `make run`.
 
-# xxh3
+## xxh3
 
 While trying to come up with a way to do the fnv1a hash 4 bytes at a time instead of byte by byte,
 (which would work, but would give the same hash value), I stumbled upon (ahem, chatgpt suggested...) [`xxh3`](https://github.com/Cyan4973/xxHash).
@@ -433,7 +433,7 @@ In any case, xxh3 is still faster, so I was happy to drop that code.
 
 Changing from fnv to xxh3 brought the time down from 1.39s to 1.30s on the ryzen.
 
-# Working with unsafe.Add in main loop
+## Working with unsafe.Add in main loop
 
 When looking at the assembly of the main loop (`ParseWorker` func), I noticed there was quite a few conditional jump to the `panicslice` family of functions.
 So I went and changed all slice access to use `unsafe.Add` to remove those bound checks.
@@ -450,14 +450,14 @@ So, to call it, `ParseWorker` has to pass in the required value (`0x3b3b3b3b3b3b
 With these changes, the time goes down from 1.30s to 1.19s on the ryzen.
 
 
-# faster bytes.Equal
+## faster bytes.Equal
 
 While experimenting with accessing multiple bytes at a time for comparison, I ended up writing `fastbyteequal` (see [internal/brc/station_find_test.go]) which compares 2 byte slices for equality 4 bytes at a time and doing the remainder one by one.
 In my rudimentary test, it seems to be around 5% faster than bytes.Equal on both the i7-7700 and ryzen 9 7900, which I found quite surprising.
 
 I didn't end up using that code, since there was no collision in the bigarray with xxh3, but that would have been a way to lose less performance.
 
-# Inlining xxh3
+## Inlining xxh3
 
 While I was writing this summary, I realized that the only call that was not inlined in the main loop was the call to `xxh3.Hash()`.
 Compiling with `-gcflags=-m=2` reveals why:
@@ -474,11 +474,6 @@ The code is not exactly the same: I removed any support for hash byte sequences 
 
 With that change, everything is inlined and the total time goes from  1.19s to 1.13s on the ryzen.
 
-
-# Conclusion
-
-In the end, the program takes 1.13s on a ryzen 9 7900 (24 core), while the baseline implementation without concurrency took 88s on the same machine.
-
 The profiling shows:
 - 49% in ParseWorker
 - 15% `xxh3` (all its inlined functions)
@@ -487,6 +482,34 @@ The profiling shows:
 - 02% new measurement
 - 07% file reading
 
+## Input reading 3
+
+The 7% file reading above caught my eye, in absolute time it was suspiciously close to the total time of 1.13s.
+
+I tried using a chunker that read through a byte slice backed by mmap.
+The result is [ByteChunker](https://github.com/jraby/1brc/blob/main/internal/fastbrc/chunker.go#L89-L131).
+It is much simpler than the original chunker, it doesn't copy anything, but allocates a little bit for every slices it pushes down the channel.
+The allocations don't show up in the profile at all, so I let them be.
+
+With this new chunker, reading the input data disappears from the profile and the total time goes from 1.13s to 1.07s.
+
+There's something strange however, I think the timings are off between the start of the program and the start of `main`.
+Timing the `main` function shows around 0.840ms, yet timing the whole execution with `/bin/time` or `perf stat` shows 1.070s.
+
+I still haven't figured where that 230ms is going; `strace` shows ~4ms between `execve` of the program and the `open` call for the input file.
+It is a mystery for later.
+
+# Conclusion
+
+In the end, the program takes 1.07s on a ryzen 9 7900 (24 core), while the baseline implementation without concurrency took 88s on the same machine.
+
+The final profiling shows:
+- 48% `ParseWorker`
+- 25% `indexBytePointerUnsafe8Bytes`
+- 14% `xxh3`
+- 09% `ParseFixedPoint16UnsafePtr`
+- 04 new measurement
+
 The number one entry on the leaderboard runs in 0.448ms on that machine, so clearly there's room for improvement,
 but I think that's enough for now.
 
@@ -494,8 +517,8 @@ It was very interesting to explore the multiple sides of this problem for a few 
 It is quite simple on the surface, but there's a lot of depth to it!
 
 I think there are some tweaks to squeeze more performance out of this:
-- change chunker to use slices from mmap instead of copying the data
 - conversion from string to fixed precision int without any branches, using bit twiddling (like they did in the #1 entry)
+- maybe reduce the number of jumps in the main loop by splitting the chunks in N, and parsing it N lines per iteration?
 
 In the end, I guess my key take aways are:
 - when reaching for a hash function, I used to always start with fnv because of how simple it is.
