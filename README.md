@@ -57,8 +57,8 @@ I really enjoyed the process of optimization:
 I ended up with a dozen implementations and quite a few failed experiments and red herrings.
 Overall it was quite interesting.
 
-In the end, I stopped when the program could run in 1.07s on a ryzen 9 7900 (24 cores) machine.
-On that machine, the #1 entry in the leaderboard runs in 0.488ms.
+In the end, I stopped when the program could run in 0.871s on a ryzen 9 7900 (24 cores) machine.
+On that machine, the #1 entry in the leaderboard runs in 0.488s.
 
 # Single thread baseline
 
@@ -496,21 +496,51 @@ With this new chunker, reading the input data disappears from the profile and th
 There's something strange however, I think the timings are off between the start of the program and the start of `main`.
 Timing the `main` function shows around 0.840ms, yet timing the whole execution with `/bin/time` or `perf stat` shows 1.070s.
 
-I still haven't figured where that 230ms is going; `strace` shows ~4ms between `execve` of the program and the `open` call for the input file.
-It is a mystery for later.
+## munmap detour
+
+The timing discrepancy between the top and bottom of the `main` function vs external was bugging me...
+
+Looking at the `strace` output it finally spotted where the difference came from:
+```
+984607 02:07:40.278516 +++ exited with 0 +++
+984606 02:07:40.278518 +++ exited with 0 +++
+984605 02:07:40.278519 +++ exited with 0 +++
+984604 02:07:40.278522 +++ exited with 0 +++
+984603 02:07:40.278524 +++ exited with 0 +++
+984602 02:07:40.278526 +++ exited with 0 +++
+984601 02:07:40.278528 +++ exited with 0 +++
+984600 02:07:40.504876 +++ exited with 0 +++  <<<<<<<<<<<<<<
+984599 02:07:40.504893 +++ exited with 0 +++
+```
+
+When the program exited, all the threads exited at the same time, except the last 2, which took ~230ms to exit.
+I tried some cowboy stuff, like killing the program from within with a `SIGKILL`, that didn't change anything :)
+
+It turns out that it was caused by the unmapping of the `mmap`ed pages.
+Calling `munmap` from `main`, caused the same delay.
+
+I had a mecanism to `ReleaseChunk`s when I was using the original chunked.
+I reused it to call [`madvise(2)`](https://man7.org/linux/man-pages/man2/madvise.2.html) with the `MADV_DONTNEED` hint,
+indicating to the kernel that we're done with those pages.
+It required a bit of help from chatgpt to get page aligned boundaries (which chatgpt nailed on the first go), otherwise `madvise` returned `EINVAL`.
+
+With this, the timing goes from 1.07s to 0.871s.
+
+Only using `MADV_SEQUENTIAL` on the whole range doesn't seem to have any effect on the unmap performance.
 
 # Conclusion
 
-In the end, the program takes 1.07s on a ryzen 9 7900 (24 core), while the baseline implementation without concurrency took 88s on the same machine.
+In the end, the program takes 0.871s on a ryzen 9 7900 (24 core), while the baseline implementation without concurrency took 88s on the same machine.
 
 The final profiling shows:
 - 48% `ParseWorker`
-- 25% `indexBytePointerUnsafe8Bytes`
-- 14% `xxh3`
+- 26% `indexBytePointerUnsafe8Bytes`
+- 13% `xxh3`
 - 09% `ParseFixedPoint16UnsafePtr`
-- 04 new measurement
+- 02% new measurement
+- 02% `madvise`
 
-The number one entry on the leaderboard runs in 0.448ms on that machine, so clearly there's room for improvement,
+The number one entry on the leaderboard runs in 0.448ms on that machine, so there's room for improvement,
 but I think that's enough for now.
 
 It was very interesting to explore the multiple sides of this problem for a few hacking session.
@@ -530,6 +560,8 @@ In the end, I guess my key take aways are:
 - Inlining can be key to performance.
   One can verify why a function is not inlined by passing `-gcflags="-m=2"` to `go test` or `go build`.
   Fiddling with the functions to get their complexity budget to fit under the limit (80 as of go 1.24) is tricky.
+- parallel file reading with mmap is FAST. But calling munmap on 13gb of data at once takes 230ms, so I guess that's a thing to keep in mind when mmaping big files.
+  - calling `madvise(..., MADV_DONTNEED)` when done with the pages lets the kernel start the cleanup early.
 - set `/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor` to `performance` when testing for more uniform results.
 - when working with a 13gb dataset, make sure firefox is not taking 20gb of ram on a 32gb machine or performance is going to be suboptimal.
   (aka monitor pagecache hit ratios with [cachestat](https://github.com/brendangregg/perf-tools/blob/master/fs/cachestat), or io with iostat)
