@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"log/slog"
 	"os"
@@ -11,13 +10,46 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"1brc/internal/fastbrc"
 )
 
-func run(reader io.Reader, nworkers, chunkerChannelCap, chunkSize int) string {
-	chunker := fastbrc.NewChunker(reader, chunkerChannelCap, chunkSize)
+func mmap(filename string) ([]byte, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
 
+	size := fi.Size()
+	if size <= 0 {
+		return nil, fmt.Errorf("mmap: file %q too small", filename)
+	}
+	if size != int64(int(size)) {
+		return nil, fmt.Errorf("mmap: file %q is too large", filename)
+	}
+
+	data, err := syscall.Mmap(int(f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
+}
+
+type Chunker interface {
+	Run() error
+	fastbrc.ChunkGetter
+}
+
+// func run(reader io.Reader, nworkers, chunkerChannelCap, chunkSize int) string {
+func run(chunker Chunker, nworkers int) string {
 	stationTables := make([][]fastbrc.StationInt16, nworkers)
 	wg := sync.WaitGroup{}
 
@@ -93,15 +125,19 @@ func run(reader io.Reader, nworkers, chunkerChannelCap, chunkSize int) string {
 }
 
 func main() {
+	t0 := time.Now()
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 	nworkers := flag.Int("n", 1, "number of workers for parallel funcs")
 	chunkSize := flag.Int("chunksize", 256*1024, "size of the chunks to be processed by workers")
-	chunkerChannelCap := flag.Int("channel-cap", 256, "capacity of the chunk channel")
+	chunkerChannelCap := flag.Int("channel-cap", -1, "capacity of the chunk channel")
 	inputFile := flag.String("f", "data/10m.txt", "input file")
 	var loglevel slog.Level
 	flag.TextVar(&loglevel, "loglevel", slog.LevelInfo, "loglevel")
 
 	flag.Parse()
+	if *chunkerChannelCap == -1 {
+		*chunkerChannelCap = *nworkers
+	}
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: loglevel,
@@ -122,5 +158,11 @@ func main() {
 	}
 	defer f.Close()
 
-	fmt.Println(run(f, *nworkers, *chunkerChannelCap, *chunkSize))
+	data, err := mmap(*inputFile)
+	if err != nil {
+		log.Fatalf("mmap: %s", err)
+	}
+	chunker := fastbrc.NewByteChunker(data, *chunkerChannelCap, *chunkSize)
+	fmt.Println(run(chunker, *nworkers))
+	log.Printf("took: %0.3f", time.Since(t0).Seconds())
 }

@@ -85,3 +85,47 @@ func (c *Chunker) Run() error {
 		c.chunkCh <- chunk
 	}
 }
+
+type ByteChunker struct {
+	b         []byte
+	chunkCh   chan *[]byte
+	chunkSize int
+}
+
+func NewByteChunker(input []byte, chCap, chunkSize int) *ByteChunker {
+	return &ByteChunker{
+		b:         input,
+		chunkCh:   make(chan *[]byte, chCap),
+		chunkSize: chunkSize,
+	}
+}
+
+func (c *ByteChunker) ReleaseChunk(chunk *[]byte) {
+	// to satisfy interface
+}
+
+func (c *ByteChunker) NextChunk() *[]byte {
+	return <-c.chunkCh
+}
+
+func (c *ByteChunker) Run() error {
+	readStartPos := 0
+	for readStartPos < len(c.b) {
+		chunk := c.b[readStartPos:min(readStartPos+c.chunkSize, len(c.b))]
+		lastnl := bytes.LastIndexByte(chunk, '\n')
+		if lastnl == -1 {
+			return fmt.Errorf("missing \\n in chunk")
+		}
+
+		chunk = chunk[:lastnl+1]   // include \n
+		readStartPos += len(chunk) // start next read after \n
+
+		c.chunkCh <- &chunk
+		// log.Printf("chunk:\n%s", chunk)
+		// log.Printf("lenchunk: %d", len(chunk))
+		// log.Printf("readStartPos: %d", readStartPos)
+		// log.Printf("lenb: %d", len(c.b))
+	}
+	close(c.chunkCh)
+	return nil
+}
