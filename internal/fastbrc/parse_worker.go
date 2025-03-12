@@ -163,7 +163,8 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 			//}
 
 			// h := xxh3.Hash(unsafe.Slice((*byte)(unsafe.Add(chunkp, startpos)), delim))
-			// inlined hash64 from xxh3 taken from https://github.com/zeebo/xxh3
+
+			// inlined hashAny from xxh3. original source: https://github.com/zeebo/xxh3
 			// see xxh3.go for full license
 			// Trimmed down to support input <32 char since the longest station is 26 byte long
 			var acc u64
@@ -216,6 +217,8 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 				acc += mulFold64(readU64(p, 0*8)^key64_000, readU64(p, 1*8)^key64_008)
 				acc += mulFold64(readU64(p, ui(l)-2*8)^key64_016, readU64(p, ui(l)-1*8)^key64_024)
 				h = xxh3Avalanche(acc)
+			default:
+				panic("input to baby xxh3 too long")
 			}
 
 			station := (*StationInt16)(unsafe.Add(stationTablePtr, (h%stationTableLen)*uint64(stationSize)))

@@ -57,7 +57,7 @@ I really enjoyed the process of optimization:
 I ended up with a dozen implementations and quite a few failed experiments and red herrings.
 Overall it was quite interesting.
 
-In the end, I stopped when the program could run in 1.19s on a ryzen 9 7900 (24 cores) machine.
+In the end, I stopped when the program could run in 1.13s on a ryzen 9 7900 (24 cores) machine.
 On that machine, the #1 entry in the leaderboard runs in 0.488ms.
 
 # Single thread baseline
@@ -449,7 +449,6 @@ So, to call it, `ParseWorker` has to pass in the required value (`0x3b3b3b3b3b3b
 
 With these changes, the time goes down from 1.30s to 1.19s on the ryzen.
 
-The only call that is not inlined is the call to `xxh3.hashAny`, which is a bit unfortunate as it might have brought the timing close to 1s.
 
 # faster bytes.Equal
 
@@ -458,18 +457,35 @@ In my rudimentary test, it seems to be around 5% faster than bytes.Equal on both
 
 I didn't end up using that code, since there was no collision in the bigarray with xxh3, but that would have been a way to lose less performance.
 
+# Inlining xxh3
+
+While I was writing this summary, I realized that the only call that was not inlined in the main loop was the call to `xxh3.Hash()`.
+Compiling with `-gcflags=-m=2` reveals why:
+```
+./hash64.go:15:6: cannot inline hashAny: function too complex: cost 1950 exceeds budget 80
+```
+
+There's no way the compiler is going to inline that any time soon.
+
+So as an experiment I copied the support code from `xxh3` to <./internal/fastbrc/xxh3.go> (along with its license)
+and manually inlined `xxh3.hashAny` directly in `ParseWorker`.
+The code is not exactly the same: I removed any support for hash byte sequences longer than 31 bytes.
+(the longest station name is 26 bytes long)
+
+With that change, everything is inlined and the total time goes from  1.19s to 1.13s on the ryzen.
+
 
 # Conclusion
 
-In the end, the program takes 1.19s on a ryzen 9 7900 (24 core), while the baseline implementation without concurrency took 88s on the same machine.
+In the end, the program takes 1.13s on a ryzen 9 7900 (24 core), while the baseline implementation without concurrency took 88s on the same machine.
 
 The profiling shows:
-- 31% in ParseWorker
-- 26% `xxh3`
-- 23% `indexBytePointerUnsafe8Bytes`
-- 11% `ParseFixedPoint16UnsafePtr`
-- 04% new measurement
-- 05% file reading
+- 49% in ParseWorker
+- 15% `xxh3` (all its inlined functions)
+- 19% `indexBytePointerUnsafe8Bytes`
+- 08% `ParseFixedPoint16UnsafePtr`
+- 02% new measurement
+- 07% file reading
 
 The number one entry on the leaderboard runs in 0.448ms on that machine, so clearly there's room for improvement,
 but I think that's enough for now.
@@ -478,16 +494,13 @@ It was very interesting to explore the multiple sides of this problem for a few 
 It is quite simple on the surface, but there's a lot of depth to it!
 
 I think there are some tweaks to squeeze more performance out of this:
-- import the xxh3 code and inline it in the loop manually to reduce the function call overhead.
-  It is quite unfortunate that it cannot be done automatically.
-  Given how many times it is called, it might reduce the overall time by another 100ms.
-- conversion from string to fixed precision int without any branches, using bit twiddling (like they did in the #1 entry)
 - change chunker to use slices from mmap instead of copying the data
-  - this is useless at the moment since the rest the of program is faster than the file reading part (1.3s vs ~0.5s), but it is probably the only way to go under 500ms like the #1 entry does.
+- conversion from string to fixed precision int without any branches, using bit twiddling (like they did in the #1 entry)
 
 In the end, I guess my key take aways are:
 - when reaching for a hash function, I used to always start with fnv because of how simple it is.
   I might start with xxh3 now if the hash loop is really hot, since the go implementation seems pretty good.
+  Yann Collet has a good [blog post](fastcompression.blogspot.com/2019/03/presenting-xxh3.html) presenting xxh3, with graphs showing its performance in comparison to other hashes.
 - in really hot loops, bounds checking matters and I haven't found a good way to eliminate them without resorting to `unsafe`, which is a bit unfortunate.
   But really, this is only needed in the hottest loops.
   Looking at the assembly with `go tool objdump` is a good reflex to have to inspect such loops.
