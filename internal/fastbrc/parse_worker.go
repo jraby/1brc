@@ -79,6 +79,7 @@ func indexBytePointerUnsafe8Bytes(bp unsafe.Pointer, length int, needle byte, br
 			return bits.TrailingZeros64(mask)>>3 + i
 		}
 	}
+
 	for ; i < length; i++ {
 		if *(*byte)(unsafe.Add(bp, i)) == needle {
 			return i
@@ -156,8 +157,11 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 		startpos := 0
 		chunklen := len(*chunk)
 		chunkp := unsafe.Pointer(unsafe.SliceData(*chunk))
+		var delim, nl int
 		for startpos < chunklen {
-			delim := indexBytePointerUnsafe8Bytes(unsafe.Add(chunkp, startpos), chunklen-startpos, ';', broadcastedDelim)
+
+			// XXX this will access memory past the chunk if the data is invalid.
+			delim = indexBytePointerUnsafe8Bytes(unsafe.Add(chunkp, startpos), 32, ';', broadcastedDelim)
 			//if delim < 0 {
 			//	log.Fatal("garbage input, ';' not found")
 			//}
@@ -235,7 +239,8 @@ func ParseWorker(chunker ChunkGetter) []StationInt16 {
 
 			startpos += delim + 1
 
-			nl := indexBytePointerUnsafe8Bytes(unsafe.Add(chunkp, startpos), chunklen-startpos, '\n', broadcastedNl)
+			// XXX this will access memory past the chunk if the data is invalid.
+			nl = indexBytePointerUnsafe8Bytes(unsafe.Add(chunkp, startpos), 8, '\n', broadcastedNl)
 			//if nl < 0 {
 			//	log.Fatal("garbage input, '\\n' not found")
 			//}

@@ -1,7 +1,7 @@
 The following is a summary of a few hacking sessions trying to write a program with decent performance to complete the [1 billion rows challenge](https://github.com/gunnarmorling/1brc).
 
 The final code can be found in [`main.go`](./main.go) and in the [fastbrc](./internal/fastbrc/) module.
-The program runs in 0.871s on a ryzen 9 7900 (24 threads), while the #1 entry in the leaderboard runs in 0.488s on the same machine.
+The program runs in 0.858s on a ryzen 9 7900 (24 threads), while the #1 entry in the leaderboard runs in 0.488s on the same machine.
 
 To run the code:
 1. generate the measurement file as per the official [instructions](https://github.com/gunnarmorling/1brc#running-the-challenge) and store it as `data/1b.txt`
@@ -528,9 +528,17 @@ With this, the timing goes from 1.07s to 0.871s.
 
 Only using `MADV_SEQUENTIAL` on the whole range doesn't seem to have any effect on the unmap performance.
 
+## Reducing length of data scannable by indexbyte 
+
+Instead of telling `indexBytePointerUnsafe8Bytes` to scan from "startpos" to the end of the chunk,
+telling it to scan from startpos up to 32 bytes for `;` and 8 bytes for `\n` reduces the runtime from 0.871s to 0.858s.
+
+It is quite unsafe to do that, without adding logic to handle the end of the chunk.
+Which I didn't since the data is valid. (seriously this is getting ridiculous!)
+
 # Conclusion
 
-In the end, the program takes 0.871s on a ryzen 9 7900 (24 threads), while the baseline implementation without concurrency took 88s on the same machine.
+In the end, the program takes 0.858s on a ryzen 9 7900 (24 threads), while the baseline implementation without concurrency took 88s on the same machine.
 
 The final profiling shows:
 - 48% `ParseWorker`
@@ -562,6 +570,8 @@ In the end, I guess my key take aways are:
   Fiddling with the functions to get their complexity budget to fit under the limit (80 as of go 1.24) is tricky.
 - parallel file reading with mmap is FAST. But calling munmap on 13gb of data at once takes 230ms, so I guess that's a thing to keep in mind when mmaping big files.
   - calling `madvise(..., MADV_DONTNEED)` when done with the pages lets the kernel start the cleanup early.
+- There seems to be a point where one has to go and use unsafe to squeeze the bit of performance.
+  The speedup can be substantial (in this very specific case it was something like 2x+), but the code doesn't look like Go anymore.
 - set `/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor` to `performance` when testing for more uniform results.
 - when working with a 13gb dataset, make sure firefox is not taking 20gb of ram on a 32gb machine or performance is going to be suboptimal.
   (aka monitor pagecache hit ratios with [cachestat](https://github.com/brendangregg/perf-tools/blob/master/fs/cachestat), or io with iostat)
