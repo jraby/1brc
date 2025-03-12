@@ -1,8 +1,10 @@
 The following is a summary of a few hacking sessions trying to write a program with decent performance to complete the [1 billion rows challenge](https://github.com/gunnarmorling/1brc).
 
-The final code can be found in the [fastbrc](./internal/fastbrc/) module.
-To run it:
-1. generate the measurement file as per https://github.com/gunnarmorling/1brc#running-the-challenge) and store it as `data/1b.txt`
+The final code can be found in [`main.go`](./main.go) and in the [fastbrc](./internal/fastbrc/) module.
+The program runs in 0.871s on a ryzen 9 7900 (24 threads), while the #1 entry in the leaderboard runs in 0.488s on the same machine.
+
+To run the code:
+1. generate the measurement file as per the official [instructions](https://github.com/gunnarmorling/1brc#running-the-challenge) and store it as `data/1b.txt`
 1. run `make run`
 
 ---
@@ -10,7 +12,7 @@ To run it:
 The idea is to write a program that tracks the minimum, maximum and average value for each unique "station" in the input file and write the result to `stdout`.
 
 The input file has 1 billion rows and is about 13gb in size.
-The format is:
+The format of each line is:
 ```
 <stationname>;<measurement>\n
 ```
@@ -34,6 +36,7 @@ Istanbul;23.0
 ```
 
 The minimum measurement is `-99.9` and the maximum is `99.9`.
+There are about 300 unique "stations" in the dataset.
 
 The program must do its works at runtime, it is not permitted to bake results or tables into the program.
 
@@ -50,27 +53,23 @@ I have a bit of free time right now, so I thought it would be fun to spend *some
 
 I really enjoyed the process of optimization:
 - Run a benchmark on a subset of the dataset (10m rows) and record a cpu and memory profile.
-- observe the profiles with pprof
+- observe the profiles with `go tool pprof`
 - choose an area to explore
 - hack on it, profile, repeat
 
 I ended up with a dozen implementations and quite a few failed experiments and red herrings.
 Overall it was quite interesting.
 
-In the end, I stopped when the program could run in 0.871s on a ryzen 9 7900 (24 cores) machine.
-On that machine, the #1 entry in the leaderboard runs in 0.488s.
-
 # Single thread baseline
 
-A  straightforward single thread implementation using:
+A  straightforward and "idiomatic" single thread implementation runs through the 13gb file in ~88s on a ryzen 9 7900.
+
+The implementation uses:
 - `map[string]*Station` to accumulate the measurements
 - `bufio.ScanLines` to get each line
 - `strings.Split` to split each line on `;`
 - `strconv.ParseFloat` to convert the measurement to float
 
-Runs through the 13gb file in:
-- ~94s on a i7-7700
-- ~88s on a ryzen 9 7900
 
 The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/baseline.go#L140-L177), run with  `make runner.baseline`.
 
@@ -100,21 +99,21 @@ This program does a few things in a hot loop:
 
 One clear goal is to avoid allocation and copies in most of these steps.
 
-At first I was focussing on single thread performance since I expected to be able to parallelize this workload without too much effort by having a goroutine find valid chunks of data in the input file and send them to some worker goroutine that would independently do the parsing and accumulate the stats. Then merge the results.
+At first I was focussing on single thread performance since I expected to be able to parallelize this workload without too much effort by having a goroutine find valid chunks of data in the input file and send them to some worker goroutine that would independently do the parsing and accumulate the stats.
+Then merge the results.
 
 ## Input reading and splitting 1
 
 I tried various approaches to reduce the number of allocation and string copies.
 
 first attempt:
-- mmap the input file
+- mmap the input file with [exp.mmap](https://pkg.go.dev/golang.org/x/exp/mmap) and an `io.SectionReader` covering the whole file.
+- keep using `scanner.Scan()` to find new lines (`ScanLines`)
 - work with `scanner.Bytes` to avoid allocation
 - use `bytes.IndexByte` to locate the `;`
 - use `unsafe.String` and `unsafe.SliceData` to create a temporaty string for the measurement without allocating, and pass that to `strconv.ParseFloat`
 
-This takes the total time down to: 
-- 40s on i7-7700
-- 38s on ryzen 9 7900
+This takes the total time down to 38s on ryzen 9 7900.
 
 The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/reduced_allocs.go#L28-L72), run with `make runner.reduced-allocs`.
 
@@ -125,16 +124,14 @@ The time is now split like this:
 - 06% `bytes.IndexByte(b, ';')`
 - 01% new measurements
 
-Using `bufio.NewReaderSize(reader, 1024*1024)` to read the input file in chunks of 1mb instead of the default 4k for the scanner reduces the runtime to: (`make runner.reduced-allocs-buffered`)
-- 39s on i7-7700
-- 37s on ryzen 9 7900
+Using `bufio.NewReaderSize(reader, 1024*1024)` to read the input file in chunks of 1mb instead of the default 4k for the scanner reduces the runtime to 37s:
+Run with  `make runner.reduced-allocs-buffered`.
 
 After that I made a failed attempts at trying to read every byte only once, by using `IndexByte(b, delim)`, where `delim` was either `;` or `\n` depending on the state of the parser.
 It was terrible, adding a `if` statement in the middle of that loop along with a variable, destroyed the performance, it was something like twice as slow.
 
-Eventually I tried using `bufio.(*Reader).ReadSlice('\n')` to find end of lines, instead of `bufio.ScanLines`:
-- 36.5s on i7-7700  (for a still unknown reason, this measurement went up to 57s during writing of this document, so I'll only be using the ryzen for reference)
-- 35.5s on ryzen 9 7900
+Eventually I tried using `bufio.(*Reader).ReadSlice('\n')` instead of `bufio.ScanLines` to find end of lines, since it avoids copying the bytes.
+It runs in 35.5s.
 
 The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L23-L76), run with `make runner.readslice`.
 
@@ -145,25 +142,25 @@ At this point, the processing is now split like this:
 - 06% `IndexByte(b, ';')`
 - 04%  new measurement
 
-I switched to map access profiling at that point, but would return to reading and parsing lines later.
+I then switched to map access profiling, but would return to reading and parsing lines later.
 
 ## Map Access 1
 
-Keeping the same input parsing as above, I then proceeded to try different data structures for storing the `name` to `measurement` mapping.
+Keeping the same input parsing as above, I proceeded to try different data structures for storing the `name` to `measurement` mapping.
 
 I wrote a rudimentary hash table with 8192 buckets, hashing the `name` strings using various algorithms.
 I would come back to these hashing algorithm later, but at this point I tested, `fnv1a` 32 bits from the stdlib, [xxhash](github.com/cespare/xxhash) and an unrolled version of fnv1a32 that processes 4 bytes of input per iteration instead of doing it 1 byte at a time.
 
-See `stringHash` in 1brc/internal/brc/hash.go.
+See [`stringHash`](https://github.com/jraby/1brc/blob/main/internal/brc/hash.go#L39-L65).
 
-It ended up taking ~34s on ryzen 9 7900.
+It ended up taking about 34s.
 
 The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/readslice.go#L23-L76), run with `make runner.readslicestringhash`.
 
 The map access went down from 33% of runtime to 27%,
 but it introduced a bunch of allocations and I wasn't satisfied with it.
 
-I let it on the back burner for the moment and moved to a first iteration on float parsing for a change of scenery.
+I left it on the back burner for the moment and moved to a first iteration on float parsing for a change of scenery.
 
 ## Float parsing 1
 
@@ -171,7 +168,7 @@ Since the challenge only required 1 decimal place precision in the output, I tri
 So 12.3 would be stored as 123.
 This would eliminate all floating point math during the hot loop and require divisions by 10 when printing the output.
 
-I wrote a somewhat robust parser ([`ParseFixedPoint16`](./internal/brc/parse_fixed_point.go)) and switched to using a `StationInt16` stuct that uses int16 for Min,Max and int32 for the Total and number of samples.
+I wrote a somewhat robust parser ([`ParseFixedPoint16`](https://github.com/jraby/1brc/blob/main/internal/brc/parse_fixed_point.go#L29-L72)) and switched to using a `StationInt16` stuct that uses int16 for Min, Max and int32 for the Total and number of samples.
 This parser works on a byte slice (so we can drop the `unsafe.String` incantation from the parse loop).
 It scans the slice forward, checking for a leading `-` for negative numbers,
 it stop parsing after the first decimal is read,
@@ -192,9 +189,10 @@ Profiling now shows:
 - 03% new measurement
 
 Since the input is known to be valid,
-I removed all checks for invalid stuff, keeping only the logic for `.` skipping and sign flip.
-I also started scanning from the end of the slice.
-See [ParseFixedPoint16Unsafe](./internal/brc/parse_fixed_point.go).
+I rewrote the function to take advantage of this fact by removing all sanity checks,
+keeping only the logic for `.` skipping and sign flip.
+I also started scanning from the end of the slice since it requires less state.
+See [`ParseFixedPoint16Unsafe`](https://github.com/jraby/1brc/blob/main/internal/brc/parse_fixed_point.go#L5-L23).
 
 This runs in 24s on the ryzen.
 
@@ -217,10 +215,10 @@ To parallelize the workload, I started by:
 - splitting the files in N valid sections of about totalSize/N size, taking care to end each section on a `\n`.
 - creating a [`io.SectionReader`](https://pkg.go.dev/io#SectionReader) for each section.
 
-Then spin up N goroutines that would parse through each section in concurrently.
+Then spin up N goroutines that would parse through each section in concurrently, storing their results in a preallocated `[N]StationInt16` array.
 Once the goroutines are done, merge the results and print the output.
 
-This takes 2.23s on the ryzen 9 7900 with 24 cores.
+This takes 2.23s on the ryzen 9 7900 with 24 threads.
 
 The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/parallel.go#L16-L119), run with `make runner.parallelreadslicefixed16unsafe`.
 
@@ -231,7 +229,7 @@ Profiling shows:
 - 10% `ParseFixedPoint16Unsafe`
 - 06% new measurement
 
-It doesn't scale linearly, but 24 cores is still the fastest:
+It doesn't scale linearly, but 24 threads is still the fastest:
 ```
 nproc=1       25.258936986 seconds time elapsed
 nproc=2       12.736176446 seconds time elapsed
@@ -263,24 +261,24 @@ nproc=24       2.263671349 seconds time elapsed
 
 Clearly it was time to reduce map access time.
 
-I experimented with bunch of approaches:
-- binary search in an array, that was terrible, comparing keys multiple times with `bytes.Compare` is a good way to waste time :-)
+I experimented with multiple approaches:
+- binary search in an array, that was terrible, comparing keys multiple times with `bytes.Compare` is a good way to spend a lot of time :-)
 - radix trees. The implementation allocated a lot, I didn't pursue it further.
 - switching `StringHash` to `ByteHash`, that is, avoid a conversion from byte to string (via `unsafe.String`) and do the unrolled fnv1a32 on a byte slice.
 - using a big array to store `StationInt16` struct without pointers and no collision management. (cowboy hat)
 - multiple tries to get the  `StringHash` hash table to go reasonably fast.
   I managed to remove most allocations, try various hash (murmur3, crc, unrolled fnv1a32), 
-  it was faster than the original for sure, but slow than the "big array" approach.
+  it was faster than the original for sure, but slower than the "big array" approach.
 
-The "big array" idea is a bit dumb but it is fast: there's ~300 unique names in the input file, what if the hash function didn't have any collision for the input?
-It turns out that fnv1a32 doesn't have collisions for the input set when addressing with `fnv(name) % len(array)` when the array length is 65535.
+The "big array" idea is a bit dumb but it is fast: there's ~300 unique names in the input file.
+What if the hash function didn't have any collision for the input?
+It turns out that fnv1a32 doesn't have collisions when addressing with `fnv(name) % len(array)` if the array length is 65535.
 (this might be considered cheating :-)
 
 One thing to note, adding collision detection via `bytes.Equal(station.Name, name)` adds ~200ms to the overall processing on the ryzen.
-So this code uncommented only when touching the hash function, and validating the output.
-When running benchmarks, I would simply remove the check.
+So the collision detection remains commented, unless I'm experimenting with the hash function.
 
-This approach takes 1.8s on the ryzen (24 cores) (`runner.parallelreadslicefixed16unsafeopen` -- another weird name...) 
+This approach takes 1.8s on the ryzen (24 threads) (`runner.parallelreadslicefixed16unsafeopen` -- another weird name...) 
 
 The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/parallel.go#L255-L324).
 
@@ -291,11 +289,11 @@ Profling shows:
 - 12% `ParseFixedPoint16Unsafe`
 - 03% new measurement
 
-So while it is not "clean" and certainly not safe, it works for the input set and it is quite fast.
+So while it is not "clean", not safe and cannot be used with another input set, it is quite fast, so I kept the idea.
 
 ## Input reading and splitting 2
 
-At this point I went by to try and get the data faster.
+At this point I went to try and get the data faster.
 
 ### ReadSlice(';') + ReadSlice('\n')
 I tried using `ReadSlice(';')` followed by `ReadSlice('\n')` while keeping the rest as above and to my surprise, it was slower.
@@ -337,16 +335,18 @@ Profiling:
 - 11% `ParseFixedPoint16Unsafe`
 - 06% new measurement
 - 03% file read in chunker
+
 The rest is not shown in profiling, it is spent in `ParallelChunkChannelFixedInt16UnsafeOpenAddr`
 
 ## refactor
-I thought I was mostly done, so I took a little break here and shuffled to "best" code around a little bit sincee it was starting to be a mess of tests and benchmark.
+I thought I was mostly done, so I took a little break here and shuffled to "best" code around a little bit since it was starting to be a mess of tests and benchmark.
 
-The fast code is now in `internal/fastbrc` and there's a `cmd/fastbrc` command that calls it.
+The fast code is now in <`internal/fastbrc`> and in `<main.go>`.
 
 Unfortunately, I wasn't done, I started iterating on a single copy of the code instead of keeping all versions,
 meaning I can't quickly rerun the benchmarks to see what impact each change had on the runtime.
 So the following data is taken from my notes and comments in the code.
+It is unfortunately not possible to run the program with each changes, only the last version.
 
 ## Bound checking and unsafe slice access shenanigans
 
@@ -365,28 +365,26 @@ I tried to add some compiler hints to let it know that *this is fine™*, but to
 That's when I started to get dirty :)
 The result is [`ByteHashBCE`](https://github.com/jraby/1brc/blob/main/internal/fastbrc/parse_worker.go#L37-L67), where `unsafe.Pointer` and `unsafe.Add` are used to access the underlying data of the byte slice.
 
-According to my notes, this made the fnv hash go 10% faster both on i7-7700 and the ryzen.
+According to my notes, this made the fnv hash go 10% faster.
 
 So went and replaced byte slice access with `unsafe.Pointer` + `unsafe.Add` where it seemed very hot.
 Notably in `ParseFixedPoint16Unsafe`, which was also rewritten to avoid any conditionals in the loop.
 Instead of looping from the back of the value, it now:
 - reads the last byte and converts it
 - skips the dot
-- loop and convert until to position 0
-- check if position 0 is a `-` sign, and flip the sign, or convert the first digit.
+- loops and convert until to position 0
+- checks if position 0 is a `-` sign, and flip the sign, or convert the first digit.
 
 Access to the big `StationInt16` array has also been updated to use pointer math to avoid the bound check.
 
-these 3 changes took the time from 1.62s on ryzen down to 1.39s
-
-Run with `make run`.
+these 3 changes took the time from 1.62s to 1.39s
 
 ## xxh3
 
 While trying to come up with a way to do the fnv1a hash 4 bytes at a time instead of byte by byte,
-(which would work, but would give the same hash value), I stumbled upon (ahem, chatgpt suggested...) [`xxh3`](https://github.com/Cyan4973/xxHash).
+(which would work, but would not give the same hash value), I stumbled upon (ahem, chatgpt suggested...) [`xxh3`](https://github.com/Cyan4973/xxHash).
 
-That thing is fast for this dataset:
+There's an [implementation](https://github.com/zeebo/xxh3) in go and it is quite fast for this dataset:
 ```
 cpu: AMD Ryzen 9 7900 12-Core Processor
 BenchmarkHashByteXxh3-24                 1323704               906.4 ns/op
@@ -410,7 +408,7 @@ BenchmarkHashFnv1aUnrolled4-8             492810              2194 ns/op
 BenchmarkHashFnv1aUnrolledBCE-8           620570              1921 ns/op
 BenchmarkHashStdlibFnv1a-8                458587              2531 ns/op
 ```
-this is the time taken to hash every city from the dataset 8 times.
+this is the time taken to hash every city from the dataset 8 times with various hash.
 
 xxh3 is faster than the fastest fnv by ~10%.
 
@@ -439,7 +437,8 @@ When looking at the assembly of the main loop (`ParseWorker` func), I noticed th
 So I went and changed all slice access to use `unsafe.Add` to remove those bound checks.
 
 Along the way I changed `ParseFixedPoint16Unsafe` to work with an `unsafe.Pointer` and a length, instead of going through a slice,
-and with the help of chatgpt, I implemented `indexBytePointerUnsafe8Bytes`, a function that works like `IndexByte`, but it iterates through its input 8 bytes at a time.
+and with the help of chatgpt, I implemented [`indexBytePointerUnsafe8Bytes`](https://github.com/jraby/1brc/blob/main/internal/fastbrc/parse_worker.go#L70-L88),
+a function that works like `IndexByte`, but it iterates through its input 8 bytes at a time.
 
 Its signature a bit funky: `func indexBytePointerUnsafe8Bytes(bp unsafe.Pointer, length int, needle byte, broadcastedNeedle uint64) int` 
 The pointer and the length are self explanatory, the needle is the byte the function will be looking for, and `broadcastedNeedle` is a `uint64` used for comparison.
@@ -452,10 +451,10 @@ With these changes, the time goes down from 1.30s to 1.19s on the ryzen.
 
 ## faster bytes.Equal
 
-While experimenting with accessing multiple bytes at a time for comparison, I ended up writing `fastbyteequal` (see [internal/brc/station_find_test.go]) which compares 2 byte slices for equality 4 bytes at a time and doing the remainder one by one.
+While experimenting with accessing multiple bytes at a time for comparison, I ended up writing [`fastbyteequal`](https://github.com/jraby/1brc/blob/main/internal/brc/station_find_test.go#L169-L188) which compares 2 byte slices for equality 4 bytes at a time and doing the remainder one by one.
 In my rudimentary test, it seems to be around 5% faster than bytes.Equal on both the i7-7700 and ryzen 9 7900, which I found quite surprising.
 
-I didn't end up using that code, since there was no collision in the bigarray with xxh3, but that would have been a way to lose less performance.
+I didn't end up using that code, since there was no collision in the bigarray with xxh3, but that would have been a way to lose less performance if I needed to handle collisions.
 
 ## Inlining xxh3
 
@@ -467,7 +466,7 @@ Compiling with `-gcflags=-m=2` reveals why:
 
 There's no way the compiler is going to inline that any time soon.
 
-So as an experiment I copied the support code from `xxh3` to <./internal/fastbrc/xxh3.go> (along with its license)
+So as an experiment, I copied the support code from `xxh3` to <./internal/fastbrc/xxh3.go> (along with its license)
 and manually inlined `xxh3.hashAny` directly in `ParseWorker`.
 The code is not exactly the same: I removed any support for hash byte sequences longer than 31 bytes.
 (the longest station name is 26 bytes long)
@@ -486,21 +485,21 @@ The profiling shows:
 
 The 7% file reading above caught my eye, in absolute time it was suspiciously close to the total time of 1.13s.
 
-I tried using a chunker that read through a byte slice backed by mmap.
+I tried using a chunker that read through a byte slice backed by mmap to avoid the data copy that the original chunker did.
 The result is [ByteChunker](https://github.com/jraby/1brc/blob/main/internal/fastbrc/chunker.go#L89-L131).
 It is much simpler than the original chunker, it doesn't copy anything, but allocates a little bit for every slices it pushes down the channel.
 The allocations don't show up in the profile at all, so I let them be.
 
 With this new chunker, reading the input data disappears from the profile and the total time goes from 1.13s to 1.07s.
 
-There's something strange however, I think the timings are off between the start of the program and the start of `main`.
-Timing the `main` function shows around 0.840ms, yet timing the whole execution with `/bin/time` or `perf stat` shows 1.070s.
+There was something strange however: 
+when timing the `main` from start to end, the timer shows around 0.840ms, yet timing the whole program execution with `/bin/time` or `perf stat` shows 1.070s.
 
 ## munmap detour
 
 The timing discrepancy between the top and bottom of the `main` function vs external was bugging me...
 
-Looking at the `strace` output it finally spotted where the difference came from:
+Looking at the `strace` output I finally spotted where the difference came from:
 ```
 984607 02:07:40.278516 +++ exited with 0 +++
 984606 02:07:40.278518 +++ exited with 0 +++
@@ -513,16 +512,17 @@ Looking at the `strace` output it finally spotted where the difference came from
 984599 02:07:40.504893 +++ exited with 0 +++
 ```
 
-When the program exited, all the threads exited at the same time, except the last 2, which took ~230ms to exit.
+When the program exited, all the threads exited at the same time, except the last 2, which went for a ~230ms walk before exitting.
 I tried some cowboy stuff, like killing the program from within with a `SIGKILL`, that didn't change anything :)
 
-It turns out that it was caused by the unmapping of the `mmap`ed pages.
-Calling `munmap` from `main`, caused the same delay.
+Calling `munmap` from `main`, caused the same delay, so I imagine that the kernel or something is calling munmap on our behalf, creating this slowdown.
 
-I had a mecanism to `ReleaseChunk`s when I was using the original chunked.
+I had a mecanism to `ReleaseChunk`s when I was using the original chunker.
 I reused it to call [`madvise(2)`](https://man7.org/linux/man-pages/man2/madvise.2.html) with the `MADV_DONTNEED` hint,
 indicating to the kernel that we're done with those pages.
 It required a bit of help from chatgpt to get page aligned boundaries (which chatgpt nailed on the first go), otherwise `madvise` returned `EINVAL`.
+
+That code can be found [here](https://github.com/jraby/1brc/blob/main/internal/fastbrc/chunker.go#L108-L140).
 
 With this, the timing goes from 1.07s to 0.871s.
 
@@ -530,7 +530,7 @@ Only using `MADV_SEQUENTIAL` on the whole range doesn't seem to have any effect 
 
 # Conclusion
 
-In the end, the program takes 0.871s on a ryzen 9 7900 (24 core), while the baseline implementation without concurrency took 88s on the same machine.
+In the end, the program takes 0.871s on a ryzen 9 7900 (24 threads), while the baseline implementation without concurrency took 88s on the same machine.
 
 The final profiling shows:
 - 48% `ParseWorker`
@@ -570,3 +570,5 @@ In the end, I guess my key take aways are:
 
 That's all for now!
 
+Oh and all that code is quite unidiomatic, unsafe and only works with one input set.
+Handle with care :-)
