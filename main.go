@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"1brc/internal/fastbrc"
+
+	"golang.org/x/sys/unix"
 )
 
 func mmap(filename string) ([]byte, error) {
@@ -35,9 +37,14 @@ func mmap(filename string) ([]byte, error) {
 		return nil, fmt.Errorf("mmap: file %q is too large", filename)
 	}
 
-	data, err := syscall.Mmap(int(f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
+	data, err := unix.Mmap(int(f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
 	if err != nil {
 		return nil, err
+	}
+
+	err = unix.Madvise(data, syscall.MADV_WILLNEED|syscall.MADV_SEQUENTIAL)
+	if err != nil {
+		return nil, fmt.Errorf("madvise: %w", err)
 	}
 
 	return data, nil
