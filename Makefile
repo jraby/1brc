@@ -4,8 +4,13 @@ PERF_STAT_E = task-clock:u,page-faults:u,instructions:u,cycles:u,branches:u,bran
 NPROC?= $(shell nproc)
 CHANNEL_CAP?=$(NPROC)
 CHUNKSIZE?=$(shell echo $$((2048*1024)))
+
+SYSNAME?=$(shell uname -s)
+PERF_STAT_E_COMMAND_Linux:=perf stat -e $(PERF_STAT_E)
+PERF_STAT_E_COMMAND_Darwin:=
+PERF_STAT_E_COMMAND?=$(PERF_STAT_E_COMMAND_$(SYSNAME))
 run: build
-	perf stat -e $(PERF_STAT_E) bin/fastbrc -f data/1b.txt -n $(NPROC) -channel-cap $(CHANNEL_CAP) -chunksize $(CHUNKSIZE)
+	$(PERF_STAT_E_COMMAND) bin/fastbrc -f data/1b.txt -n $(NPROC) -channel-cap $(CHANNEL_CAP) -chunksize $(CHUNKSIZE)
 
 BENCH_PATTERN?=10m
 bench:
@@ -24,7 +29,7 @@ check-runner.%: bin/runner
 	diff -u <(./output2diffable.sh ./data/10m.txt.expect) <(bin/runner -funcName $* -i data/10m.txt | ./output2diffable.sh /dev/stdin)
 
 runner.%: bin/runner
-	perf stat -e $(PERF_STAT_E) bin/runner -funcName $* -n $(NPROC) -i data/1b.txt 
+	 $(PERF_STAT_E_COMMAND) bin/runner -funcName $* -n $(NPROC) -i data/1b.txt 
 
 baseline: bin/baseline
 	diff <(./output2diffable.sh ./data/10m.txt.expect) <(bin/baseline -i data/10m.txt | ./output2diffable.sh /dev/stdin) || true
