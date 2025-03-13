@@ -42,7 +42,7 @@ func mmap(filename string) ([]byte, error) {
 		return nil, err
 	}
 
-	err = unix.Madvise(data, syscall.MADV_WILLNEED|syscall.MADV_SEQUENTIAL)
+	err = unix.Madvise(data, unix.MADV_WILLNEED|unix.MADV_SEQUENTIAL)
 	if err != nil {
 		return nil, fmt.Errorf("madvise: %w", err)
 	}

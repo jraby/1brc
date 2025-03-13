@@ -1,12 +1,8 @@
 package brc
 
 import (
-	"bytes"
 	"fmt"
 	"io"
-	"log"
-	"os"
-	"syscall"
 
 	"golang.org/x/exp/mmap"
 )
@@ -38,50 +34,6 @@ func NewMmapedSectionReaders(inputFile string, nsections int) ([]*io.SectionRead
 			if mm.At(j) == '\n' {
 				// log.Printf("start: %10d, len: %10d, end: %10d", sectionStartPos, int64(j-sectionStartPos), j)
 				sectionReaders[i] = io.NewSectionReader(mm, int64(sectionStartPos), int64(j-sectionStartPos))
-				sectionStartPos = j + 1
-				break
-			}
-		}
-	}
-
-	return sectionReaders, nil
-}
-
-func NewMmapedSectionReadersMadv(inputFile string, nsections int) ([]*io.SectionReader, error) {
-	f, err := os.Open(inputFile)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	size := int(fi.Size())
-	data, err := syscall.Mmap(int(f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
-	if err != nil {
-		return nil, err
-	}
-
-	r := bytes.NewReader(data)
-
-	sectionReaders := make([]*io.SectionReader, nsections)
-	sectionSize := size / nsections
-	sectionStartPos := 0
-	log.Printf("len: %d, sectionSize: %d", size, sectionSize)
-	for i := range nsections {
-		for j := min(sectionStartPos+sectionSize, size-1); j < size; j++ {
-			if data[j] == '\n' {
-				log.Printf("start: %10d, len: %10d, end: %10d", sectionStartPos, int64(j-sectionStartPos), j)
-				sectionReaders[i] = io.NewSectionReader(r, int64(sectionStartPos), int64(j-sectionStartPos))
-
-				// XXX this doesn't work at all, can't call madvise on subsections
-				err = syscall.Madvise(data[sectionStartPos:j], syscall.MADV_SEQUENTIAL|syscall.MADV_WILLNEED)
-				if err != nil {
-					return nil, fmt.Errorf("madvise: %w", err)
-				}
-
 				sectionStartPos = j + 1
 				break
 			}
