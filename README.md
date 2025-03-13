@@ -64,7 +64,8 @@ Overall it was quite interesting.
 
 # Single thread baseline
 
-[[Code]](https://github.com/jraby/1brc/blob/main/internal/brc/baseline.go#L140-L177): `make runner.baseline`
+[[Code]](https://github.com/jraby/1brc/blob/main/internal/brc/baseline.go#L140-L177)  
+`make runner.baseline`
 
 A  straightforward and "idiomatic" single thread implementation runs through the 13gb file in ~88s on a ryzen 9 7900.
 
