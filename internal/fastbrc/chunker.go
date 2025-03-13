@@ -135,7 +135,7 @@ func (c *ByteChunker) ReleaseChunk(chunk *[]byte) {
 	alignedSlice := c.b[alignedStart-uintptr(unsafe.Pointer(&c.b[0])) : alignedEnd-uintptr(unsafe.Pointer(&c.b[0]))]
 
 	// Apply MADV_DONTNEED
-	err := unix.Madvise(alignedSlice, unix.MADV_DONTNEED|unix.MADV_FREE)
+	err := unix.Madvise(alignedSlice, unix.MADV_DONTNEED)
 	if err != nil {
 		log.Printf("madvise failed: %v", err)
 	}
