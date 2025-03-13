@@ -1,7 +1,9 @@
+# Overview
+
 The following is a summary of a few hacking sessions trying to write a program with decent performance to complete the [1 billion rows challenge](https://github.com/gunnarmorling/1brc).
 
 The final code can be found in [`main.go`](./main.go) and in the [fastbrc](./internal/fastbrc/) module.
-The program runs in 0.858s on a ryzen 9 7900 (24 threads), while the #1 entry in the leaderboard runs in 0.488s on the same machine.
+The program runs in **0.858s** on a ryzen 9 7900 (24 threads), while the #1 entry in the leaderboard runs in **0.488s** on the same machine.
 
 To run the code:
 1. generate the measurement file as per the official [instructions](https://github.com/gunnarmorling/1brc#running-the-challenge) and store it as `data/1b.txt`
@@ -36,7 +38,7 @@ Istanbul;23.0
 ```
 
 The minimum measurement is `-99.9` and the maximum is `99.9`.
-There are about 300 unique "stations" in the dataset.
+There are about 413 unique "stations" in the dataset.
 
 The program must do its works at runtime, it is not permitted to bake results or tables into the program.
 
@@ -62,6 +64,8 @@ Overall it was quite interesting.
 
 # Single thread baseline
 
+[Code](https://github.com/jraby/1brc/blob/main/internal/brc/baseline.go#L140-L177), run with  `make runner.baseline`.
+
 A  straightforward and "idiomatic" single thread implementation runs through the 13gb file in ~88s on a ryzen 9 7900.
 
 The implementation uses:
@@ -69,9 +73,6 @@ The implementation uses:
 - `bufio.ScanLines` to get each line
 - `strings.Split` to split each line on `;`
 - `strconv.ParseFloat` to convert the measurement to float
-
-
-The code can be found [here](https://github.com/jraby/1brc/blob/main/internal/brc/baseline.go#L140-L177), run with  `make runner.baseline`.
 
 This approach is not very efficient:
 - bufio.Scanner uses a small buffer (4k) to read the input file, leading to a big syscall overhead
@@ -88,7 +89,7 @@ Overall the time is spent:
 
 Clearly there was room for improvement.
 
-# Targets
+# Optimization targets
 
 This program does a few things in a hot loop:
 - read the input file
@@ -102,6 +103,7 @@ One clear goal is to avoid allocation and copies in most of these steps.
 At first I was focussing on single thread performance since I expected to be able to parallelize this workload without too much effort by having a goroutine find valid chunks of data in the input file and send them to some worker goroutine that would independently do the parsing and accumulate the stats.
 Then merge the results.
 
+# Optimization process
 ## Input reading and splitting 1
 
 I tried various approaches to reduce the number of allocation and string copies.
@@ -270,7 +272,7 @@ I experimented with multiple approaches:
   I managed to remove most allocations, try various hash (murmur3, crc, unrolled fnv1a32), 
   it was faster than the original for sure, but slower than the "big array" approach.
 
-The "big array" idea is a bit dumb but it is fast: there's ~300 unique names in the input file.
+The "big array" idea is a bit dumb but it is fast: there's 413 unique names in the input file.
 What if the hash function didn't have any collision for the input?
 It turns out that fnv1a32 doesn't have collisions when addressing with `fnv(name) % len(array)` if the array length is 65535.
 (this might be considered cheating :-)
