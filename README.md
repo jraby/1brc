@@ -364,7 +364,7 @@ Profiling:
 
 The rest is not shown in profiling, it is spent in `ParallelChunkChannelFixedInt16UnsafeOpenAddr`
 
-## refactor
+## Refactor
 I thought I was mostly done, so I took a little break here and shuffled to "best" code around a little bit since it was starting to be a mess of tests and benchmark.
 
 The fast code is now in [`internal/fastbrc`](internal/fastbrc) and in [`main.go`](main.go).
@@ -406,7 +406,7 @@ Access to the big `StationInt16` array has also been updated to use pointer math
 
 these 3 changes took the time from **1.62s** to **1.39s**
 
-## xxh3
+## Replacing fnv with xxh3
 
 While trying to come up with a way to do the fnv1a hash 4 bytes at a time instead of byte by byte,
 (which would work, but would not give the same hash value), I stumbled upon (ahem, chatgpt suggested...) [`xxh3`](https://github.com/Cyan4973/xxHash).
@@ -458,7 +458,7 @@ In any case, xxh3 is still faster, so I was happy to drop that code.
 
 Changing from fnv to xxh3 brought the time down from **1.39s** to **1.30s** on the ryzen.
 
-## Working with unsafe.Add in main loop
+## Working with unsafe.Add (BCE) in main loop, IndexByte 8 bytes at a time
 
 When looking at the assembly of the main loop (`ParseWorker` func), I noticed there was quite a few conditional jump to the `panicslice` family of functions.
 
@@ -477,7 +477,7 @@ So, to call it, `ParseWorker` has to pass in the required value (`0x3b3b3b3b3b3b
 With these changes, the time goes down from **1.30s** to **1.19s** on the ryzen.
 
 
-## faster bytes.Equal
+## Faster bytes.Equal
 
 While experimenting with accessing multiple bytes at a time for comparison, I ended up writing [`fastbyteequal`](https://github.com/jraby/1brc/blob/main/internal/brc/station_find_test.go#L169-L188) which compares 2 byte slices for equality 4 bytes at a time and doing the remainder one by one.
 In my rudimentary test, it seems to be around 5% faster than bytes.Equal on both the i7-7700 and ryzen 9 7900, which I found quite surprising.
@@ -524,7 +524,7 @@ With this new chunker, reading the input data disappears from the profile and th
 There was something strange however: 
 when timing the `main` from start to end, the timer shows around 0.840ms, yet timing the whole program execution with `/bin/time` or `perf stat` shows 1.070s.
 
-## munmap detour
+## A detour through munmap
 
 The timing discrepancy between the top and bottom of the `main` function vs external was bugging me...
 
@@ -580,6 +580,27 @@ but I think that's enough for now.
 
 It was very interesting to explore the multiple sides of this problem for a few hacking session.
 It is quite simple on the surface, but there's a lot of depth to it!
+
+Here's a summary of the optimization journey:
+```
+88.000s Single thread baseline
+38.000s Reduced allocations
+37.000s Reduced allocations + buffering
+35.500s ReadSlice
+34.000s Homegrown hashtable with fnv instead of map[string]Station
+27.000s ParseFixedPoint16 (drop strconv.ParseFloat)
+24.000s ParseFixedPoint16Unsafe (same, without any safety checks)
+02.230s Parallelization 1
+01.800s Big station array, fnv, no support for collisions
+01.620s Chunker
+01.390s Removing bound checking in fnv, ParseFixedPoint16Unsafe and access to big station array
+01.300s Replacing fnv with xxh3
+01.190s Bound check elimination in main loop, indexBytePointerUnsafe8Bytes
+01.130s Inlining xxh3
+01.070s Mmaped Chunker
+00.871s MADV_DONTNEED for processed chunks
+00.858s Smaller memory access pattern in indexBytePointerUnsafe8Bytes, always in multiples of 8
+```
 
 I think there are some tweaks to squeeze more performance out of this:
 - conversion from string to fixed precision int without any branches, using bit twiddling (like they did in the #1 entry)
